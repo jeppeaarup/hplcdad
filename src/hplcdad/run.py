@@ -4,6 +4,7 @@ from .processing import normalise
 from .raw import RawRun
 from .readers import read_chromeleon
 from .hdf5 import read_hdf5, write_hdf5
+from .writers import write_chromeleon
 from .traces import Chromatogram, Spectrum, extract_spectrum, extract_chromatogram
 
 class DADRun:
@@ -137,6 +138,35 @@ class DADRun:
         >>> run.to_hdf5("converted/BLANK-01.h5")
         """
         return write_hdf5(self, path, overwrite=overwrite, compression_level=compression_level)
+
+    def to_chromeleon(self, path, *, overwrite: bool = False):
+        """Save the run as a Chromeleon 3D field text export and return its path.
+
+        Writes the layout Chromeleon 7.3.2 uses for its tab-separated 3D
+        field export, so software that reads Chromeleon exports can open it,
+        and ``from_chromeleon`` reads it back.
+
+        Notes
+        -----
+        - Signal values are written with 6 decimals, like Chromeleon does,
+          so they are rounded to 1e-6 mAU.
+        - Metadata fields that are None are left empty. The injection time is
+          written without a UTC offset. The URL line is filled in only when
+          the run has an ``injection_id``, with "hplcdad" as host, so it does
+          not point to a real data vault.
+
+        Parameters
+        ----------
+        path : str or Path
+            Where to write; ``.txt`` is the usual extension.
+        overwrite : bool, default False
+            Replace an existing file instead of raising FileExistsError.
+
+        Examples
+        --------
+        >>> run.to_chromeleon("exports/BLANK-01.txt")
+        """
+        return write_chromeleon(self, path, overwrite=overwrite)
 
 
     def get_chromatogram(

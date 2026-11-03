@@ -222,6 +222,41 @@ class DADSequence:
         >>> seq = DADSequence.from_cmbx("data/20261021 - Spike experiment.cmbx")
         >>> seq.to_hdf5("converted/20261021 - Spike experiment")
         """
+        paths = self._file_paths(folder, ".h5", overwrite)
+        for run, path in zip(self._runs, paths):
+            run.to_hdf5(path, overwrite=overwrite, compression_level=compression_level)
+        return paths
+
+    def to_chromeleon(self, folder, *, overwrite: bool = False) -> list[Path]:
+        """Save every run as a Chromeleon 3D field text export in ``folder``.
+
+        Files are named like ``to_hdf5`` names them, with ``.txt``
+        (``BLANK-01.txt``; ``OPTI_01 (836.smp).txt`` when names repeat).
+        See ``DADRun.to_chromeleon`` for what is written.
+
+        Raises
+        ------
+        FileExistsError
+            If a file already exists and ``overwrite`` is False. Nothing is
+            written in that case.
+
+        Examples
+        --------
+        >>> seq = DADSequence.from_cmbx("data/20261021 - Spike experiment.cmbx")
+        >>> seq.to_chromeleon("exports/20261021 - Spike experiment")
+        """
+        paths = self._file_paths(folder, ".txt", overwrite)
+        for run, path in zip(self._runs, paths):
+            run.to_chromeleon(path, overwrite=overwrite)
+        return paths
+
+    def _file_paths(self, folder, suffix: str, overwrite: bool) -> list[Path]:
+        """One file path per run in ``folder``, named after the sample.
+
+        Repeated names get the injection id (or number) added. Raises before
+        anything is written if two runs would share a name, or if a file
+        exists and ``overwrite`` is False. Creates the folder.
+        """
         folder = Path(folder)
         names = [run.meta.sample_name for run in self._runs]
         paths = []
@@ -230,7 +265,7 @@ class DADSequence:
             if names.count(stem) > 1:
                 tag = run.meta.injection_id or f"#{run.meta.injection_number or i + 1}"
                 stem = f"{stem} ({tag})"
-            paths.append(folder / f"{_safe_file_name(stem)}.h5")
+            paths.append(folder / f"{_safe_file_name(stem)}{suffix}")
 
         if len(set(paths)) != len(paths):
             raise ValueError("Two runs would be saved under the same file name.")
@@ -243,8 +278,6 @@ class DADSequence:
                 )
 
         folder.mkdir(parents=True, exist_ok=True)
-        for run, path in zip(self._runs, paths):
-            run.to_hdf5(path, overwrite=overwrite, compression_level=compression_level)
         return paths
 
     # ------------------------------------------------------- container protocol

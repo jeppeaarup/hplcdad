@@ -113,6 +113,17 @@ ds = xr.open_dataset("converted/BLANK-01.h5", engine="h5netcdf")
 
 `DADSequence.to_hdf5` names files after the sample; when names repeat, the injection id is added (`OPTI_01 (836.smp).h5`). Existing files are never overwritten unless you pass `overwrite=True`.
 
+## Writing Chromeleon text exports
+
+`to_chromeleon` writes a run in the layout of Chromeleon's 3D field text export, for software that reads those files:
+
+```python
+run.to_chromeleon("exports/BLANK-01.txt")
+seq.to_chromeleon("exports/")      # one .txt file per run
+```
+
+Values are written with 6 decimals, as Chromeleon does. Metadata the run does not have (e.g. volume and vial position for runs read from a `.cmbx`) are left empty, and the injection time is written without a UTC offset. `DADRun.from_chromeleon` reads the files back.
+
 ## How it works
 
 Loading happens in three stages, so that the vendor-specific code stays in one place:
