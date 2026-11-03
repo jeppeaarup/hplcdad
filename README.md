@@ -132,7 +132,7 @@ Loading happens in three stages, so that the vendor-specific code stays in one p
 file  ->  reader  ->  RawRun  ->  normalise  ->  DADRun
 ```
 
-1. **Reader** (`readers.py`, `hdf5.py`): parses one format and returns a `RawRun` (or a list of them, for files that hold a whole sequence, such as `.cmbx`): the data exactly as stored, together with its unit labels and an orientation hint. It does no cleanup.
+1. **Reader** (a module in `readers/`, or `hdf5.py`): parses one format and returns a `RawRun` (or a list of them, for files that hold a whole sequence, such as `.cmbx`): the data exactly as stored, together with its unit labels and an orientation hint. It does no cleanup.
 2. **Normalise** (`processing.py`): converts units to minutes and mAU, makes sure the matrix is time × wavelength, and validates the result (matching shapes, strictly increasing axes, no NaN or infinite values).
 3. **`DADRun`** (`run.py`): holds the clean data.
 
@@ -151,7 +151,7 @@ An unknown label raises a `ValueError` when the `RawRun` is created. To support 
 
 ## Adding a new format
 
-1. In `readers.py`, write `read_<vendor>(path)` that parses the file and returns a `RawRun` (signal matrix, time axis, wavelength axis, a `DADMeta`, unit labels, and `rt_as_rows` if the orientation is known). If one file holds several runs, return a list of `RawRun`.
+1. Add a module `readers/<format>.py` with a function `read_<format>(path)` that parses the file and returns a `RawRun` (signal matrix, time axis, wavelength axis, a `DADMeta`, unit labels, and `rt_as_rows` if the orientation is known). If one file holds several runs, return a list of `RawRun`. Then import it in `readers/__init__.py`.
 2. Add a class method that calls your reader and then `DADRun.from_raw(...)`: `DADRun.from_<vendor>(path)` for one run per file, or `DADSequence.from_<vendor>(path)` for several.
 
 The cleanup is shared, so a new reader only has to parse its own format. Once loaded, any run can be saved with `to_hdf5`.
@@ -162,13 +162,15 @@ The cleanup is shared, so a new reader only has to parse its own format. Once lo
 pyproject.toml
 src/hplcdad/
   __init__.py     public classes
-  readers.py      vendor readers
+  readers/        one module per file format (chromeleon_txt.py, chromeleon_cmbx.py)
+  writers.py      Chromeleon text export writer
   hdf5.py         HDF5 reading and writing
   raw.py          RawRun and unit tables
   processing.py   unit conversion, orientation, validation
   run.py          DADRun
   sequence.py     DADSequence
   traces.py       Chromatogram and Spectrum
+  preprocessing.py  AsLS baseline and Savitzky-Golay filter
   meta.py         DADMeta
 tests/
 ```
