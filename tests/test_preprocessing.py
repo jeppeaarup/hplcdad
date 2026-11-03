@@ -30,14 +30,14 @@ def test_asls_recovers_known_baseline():
 def test_savgol_keeps_a_quadratic_unchanged():
     x = np.linspace(0, 10, 501)
     y = 1 + 2 * x + 0.5 * x**2
-    smooth, _ = savgol_smooth(y, x, 0.5, polyorder=2)
+    smooth = savgol_smooth(y, x, 25, polyorder=2)
     assert np.allclose(smooth, y, atol=1e-9)
 
 
 def test_savgol_first_derivative():
     x = np.linspace(0, 10, 501)
     y = 2 * x + 0.5 * x**2
-    derivative, _ = savgol_smooth(y, x, 0.5, polyorder=2, deriv=1)
+    derivative = savgol_smooth(y, x, 25, polyorder=2, deriv=1)
     assert np.allclose(derivative, 2 + x, atol=1e-8)
 
 
@@ -50,13 +50,19 @@ def test_savgol_rejects_uneven_axis():
 def test_savgol_rejects_too_short_window():
     x = np.linspace(0, 10, 101)
     with pytest.raises(ValueError, match="polyorder"):
-        savgol_smooth(np.zeros_like(x), x, 0.1, polyorder=2)
+        savgol_smooth(np.zeros_like(x), x, 3, polyorder=3)
+
+
+def test_savgol_rejects_even_window():
+    x = np.linspace(0, 10, 101)
+    with pytest.raises(ValueError, match="odd"):
+        savgol_smooth(np.zeros_like(x), x, 10)
 
 
 def test_chromatogram_methods_return_new_objects_with_history():
     rt, _, y = synthetic_chromatogram()
     original = Chromatogram(wavelength=270.0, rt=rt, signal=y, meta=META)
-    processed = original.correct_baseline(lam=1e7).savgol(0.05)
+    processed = original.correct_baseline(lam=1e7).savgol(11)
 
     assert processed is not original
     assert np.array_equal(original.signal, y)
@@ -78,6 +84,6 @@ def test_sets_apply_to_every_trace():
 def test_spectrum_savgol():
     wl = np.arange(190.0, 642.0, 2.0)
     spectrum = Spectrum(time=10.0, wl=wl, signal=np.exp(-((wl - 270) / 20) ** 2), meta=META)
-    smooth = spectrum.savgol(10)
+    smooth = spectrum.savgol(5)
     assert smooth.signal.shape == wl.shape
     assert "5 points" in smooth.processing[0]

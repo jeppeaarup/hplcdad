@@ -40,13 +40,14 @@ class Spectrum:
             name=self.meta.sample_name,
         )
 
-    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "Spectrum":
+    def savgol(self, window_length: int, *, polyorder: int = 2, deriv: int = 0) -> "Spectrum":
         """Return a new Spectrum smoothed with a Savitzky-Golay filter along wavelength.
 
         Parameters
         ----------
-        window : float
-            Window width in nm, rounded to the nearest odd number of points.
+        window_length : int
+            Window length in points; must be odd and larger than polyorder.
+            With a 2 nm step, 5 points span 8 nm.
         polyorder : int, default 2
             Order of the fitted polynomial.
         deriv : int, default 0
@@ -54,16 +55,13 @@ class Spectrum:
 
         Examples
         --------
-        >>> smooth = spectrum.savgol(10)
-        >>> first_derivative = spectrum.savgol(10, deriv=1)
+        >>> smooth = spectrum.savgol(5)
+        >>> first_derivative = spectrum.savgol(5, deriv=1)
         """
-        signal, n_points = savgol_smooth(
-            self.signal, self.wl, window, polyorder=polyorder, deriv=deriv, unit="nm"
+        signal = savgol_smooth(
+            self.signal, self.wl, window_length, polyorder=polyorder, deriv=deriv, unit="nm"
         )
-        step = (
-            f"savgol (window={window:g} nm = {n_points} points, "
-            f"polyorder={polyorder}, deriv={deriv})"
-        )
+        step = f"savgol (window_length={window_length} points, polyorder={polyorder}, deriv={deriv})"
         return replace(self, signal=signal, processing=self.processing + (step,))
 
 
@@ -140,14 +138,15 @@ class Chromatogram:
         step = f"asls baseline correction (lam={lam:g}, p={p:g})"
         return replace(self, signal=self.signal - baseline, processing=self.processing + (step,))
 
-    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "Chromatogram":
+    def savgol(self, window_length: int, *, polyorder: int = 2, deriv: int = 0) -> "Chromatogram":
         """Return a new Chromatogram smoothed with a Savitzky-Golay filter along time.
 
         Parameters
         ----------
-        window : float
-            Window width in min, rounded to the nearest odd number of points.
-            Keep it well below the peak width, or peaks get flattened.
+        window_length : int
+            Window length in points; must be odd and larger than polyorder.
+            Keep it well below the number of points across your narrowest
+            peak, or peaks get flattened. At 2.5 Hz, 11 points span 4 s.
         polyorder : int, default 2
             Order of the fitted polynomial.
         deriv : int, default 0
@@ -155,15 +154,12 @@ class Chromatogram:
 
         Examples
         --------
-        >>> smooth = chromatogram.savgol(0.05)
+        >>> smooth = chromatogram.savgol(11)
         """
-        signal, n_points = savgol_smooth(
-            self.signal, self.rt, window, polyorder=polyorder, deriv=deriv, unit="min"
+        signal = savgol_smooth(
+            self.signal, self.rt, window_length, polyorder=polyorder, deriv=deriv, unit="min"
         )
-        step = (
-            f"savgol (window={window:g} min = {n_points} points, "
-            f"polyorder={polyorder}, deriv={deriv})"
-        )
+        step = f"savgol (window_length={window_length} points, polyorder={polyorder}, deriv={deriv})"
         return replace(self, signal=signal, processing=self.processing + (step,))
 
 
@@ -282,9 +278,9 @@ class ChromatogramSet(_TraceSet):
         """
         return self._apply("correct_baseline", lam=lam, p=p, n_iter=n_iter)
 
-    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "ChromatogramSet":
-        """Smooth every chromatogram; see ``Chromatogram.savgol`` (window in min)."""
-        return self._apply("savgol", window, polyorder=polyorder, deriv=deriv)
+    def savgol(self, window_length: int, *, polyorder: int = 2, deriv: int = 0) -> "ChromatogramSet":
+        """Smooth every chromatogram; see ``Chromatogram.savgol`` (window in points)."""
+        return self._apply("savgol", window_length, polyorder=polyorder, deriv=deriv)
 
     def to_numpy(self, *, rt_grid=None, rt_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
         """Return (rt, X) with X of shape (n_runs, n_time), in mAU.
@@ -328,9 +324,9 @@ class SpectrumSet(_TraceSet):
     _axis_label = "wl_nm"
     _unit = "nm"
 
-    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "SpectrumSet":
-        """Smooth every spectrum; see ``Spectrum.savgol`` (window in nm)."""
-        return self._apply("savgol", window, polyorder=polyorder, deriv=deriv)
+    def savgol(self, window_length: int, *, polyorder: int = 2, deriv: int = 0) -> "SpectrumSet":
+        """Smooth every spectrum; see ``Spectrum.savgol`` (window in points)."""
+        return self._apply("savgol", window_length, polyorder=polyorder, deriv=deriv)
 
     def to_numpy(self, *, wl_grid=None, wl_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
         """Return (wl, X) with X of shape (n_runs, n_wl), in mAU.

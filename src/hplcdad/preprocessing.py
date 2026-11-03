@@ -7,7 +7,7 @@ from pybaselines import Baseline
 from scipy.signal import savgol_filter
 
 
-def asls_baseline(y, *, lam=1e6, p=0.01, n_iter=10):
+def asls_baseline(y, *, lam=1e6, p=1e-2, n_iter=50):
     """Estimate a baseline with asymmetric least squares (Eilers & Boelens, 2005).
 
     Uses the AsLS implementation in pybaselines. It fits a smooth curve z
@@ -55,20 +55,20 @@ def asls_baseline(y, *, lam=1e6, p=0.01, n_iter=10):
     return baseline
 
 
-def savgol_smooth(y, x, window, *, polyorder=2, deriv=0, mode="interp", unit=""):
-    """Savitzky-Golay filter with the window given in axis units.
+def savgol_smooth(y, x, window_length, *, polyorder=2, deriv=0, mode="interp", unit=""):
+    """Savitzky-Golay filter.
 
     Parameters
     ----------
     y : 1-D array
         The signal.
     x : 1-D array
-        Its axis (time in min or wavelength in nm). Must be evenly spaced.
-    window : float
-        Window width in the units of x. Rounded to the nearest odd number
-        of points.
+        Its axis (time in min or wavelength in nm). Must be evenly spaced;
+        the spacing is used to scale derivatives.
+    window_length : int
+        Window length in points; must be odd and larger than polyorder.
     polyorder : int, default 2
-        Order of the fitted polynomial; must be smaller than the window in points.
+        Order of the fitted polynomial.
     deriv : int, default 0
         Derivative order. Derivatives are per unit of x (e.g. mAU/min).
     mode : str, default "interp"
@@ -78,7 +78,8 @@ def savgol_smooth(y, x, window, *, polyorder=2, deriv=0, mode="interp", unit="")
 
     Returns
     -------
-    (filtered signal, window length in points)
+    1-D array
+        The filtered signal.
     """
     y = np.asarray(y, dtype=float)
     x = np.asarray(x, dtype=float)
@@ -94,24 +95,20 @@ def savgol_smooth(y, x, window, *, polyorder=2, deriv=0, mode="interp", unit="")
             f"The axis is not evenly spaced (steps from {steps.min():g} to "
             f"{steps.max():g} {unit}); the Savitzky-Golay filter needs equal spacing."
         )
-    if window <= 0:
-        raise ValueError(f"Window must be positive, got {window} {unit}.")
+    if int(window_length) != window_length or window_length < 1:
+        raise ValueError(f"window_length must be a positive whole number of points, got {window_length}.")
+    window_length = int(window_length)
+    if window_length % 2 == 0:
+        raise ValueError(f"window_length must be odd, got {window_length}.")
+    if window_length <= polyorder:
+        raise ValueError(
+            f"window_length ({window_length} points) must be larger than polyorder ({polyorder})."
+        )
+    if window_length > len(y):
+        raise ValueError(
+            f"window_length ({window_length} points) is longer than the trace ({len(y)} points)."
+        )
     if deriv < 0 or deriv > polyorder:
         raise ValueError(f"deriv must be between 0 and polyorder ({polyorder}), got {deriv}.")
 
-    n_points = int(round(window / step))
-    if n_points % 2 == 0:
-        n_points += 1
-    if n_points <= polyorder:
-        raise ValueError(
-            f"A window of {window:g} {unit} is {n_points} points (step {step:g} {unit}); "
-            f"it must be more than polyorder={polyorder} points. Use a wider window."
-        )
-    if n_points > len(y):
-        raise ValueError(
-            f"A window of {window:g} {unit} is {n_points} points, more than the "
-            f"{len(y)} points in the trace."
-        )
-
-    filtered = savgol_filter(y, n_points, polyorder, deriv=deriv, delta=step, mode=mode)
-    return filtered, n_points
+    return savgol_filter(y, window_length, polyorder, deriv=deriv, delta=step, mode=mode)
