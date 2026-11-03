@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "hplcdad"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy", "pandas"]
+dependencies = ["numpy", "pandas", "scipy", "pybaselines"]
 
 [project.optional-dependencies]
 hdf5 = ["h5py"]

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
 
 from .meta import DADMeta
+from .preprocessing import asls_baseline, savgol_smooth
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class Spectrum:
     signal: np.ndarray   # mAU
     meta: DADMeta
     requested_time: float | None = None   # time asked for, in min
+    processing: tuple[str, ...] = ()      # steps applied, in order
 
     def __post_init__(self):
         if np.shape(self.signal) != np.shape(self.wl):
@@ -38,6 +40,32 @@ class Spectrum:
             name=self.meta.sample_name,
         )
 
+    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "Spectrum":
+        """Return a new Spectrum smoothed with a Savitzky-Golay filter along wavelength.
+
+        Parameters
+        ----------
+        window : float
+            Window width in nm, rounded to the nearest odd number of points.
+        polyorder : int, default 2
+            Order of the fitted polynomial.
+        deriv : int, default 0
+            Derivative order; 1 or 2 give spectral derivatives (mAU/nm, mAU/nm²).
+
+        Examples
+        --------
+        >>> smooth = spectrum.savgol(10)
+        >>> first_derivative = spectrum.savgol(10, deriv=1)
+        """
+        signal, n_points = savgol_smooth(
+            self.signal, self.wl, window, polyorder=polyorder, deriv=deriv, unit="nm"
+        )
+        step = (
+            f"savgol (window={window:g} nm = {n_points} points, "
+            f"polyorder={polyorder}, deriv={deriv})"
+        )
+        return replace(self, signal=signal, processing=self.processing + (step,))
+
 
 @dataclass(frozen=True)
 class Chromatogram:
@@ -48,6 +76,7 @@ class Chromatogram:
     signal: np.ndarray   # mAU
     meta: DADMeta
     requested_wavelength: float | None = None   # wavelength asked for, in nm
+    processing: tuple[str, ...] = ()            # steps applied, in order
 
     def __post_init__(self):
         if np.shape(self.signal) != np.shape(self.rt):
@@ -67,6 +96,75 @@ class Chromatogram:
             index=pd.Index(self.rt.copy(), name="rt_min"),
             name=self.meta.sample_name,
         )
+
+    def estimate_baseline(
+        self, *, lam: float = 1e6, p: float = 0.01, n_iter: int = 10
+    ) -> "Chromatogram":
+        """Return the baseline as a new Chromatogram, estimated with asymmetric least squares.
+
+        Useful for plotting the baseline over the data to check the settings.
+        See ``correct_baseline`` for the parameters.
+
+        Examples
+        --------
+        >>> baseline = chromatogram.estimate_baseline(lam=1e7)
+        """
+        baseline = asls_baseline(self.signal, lam=lam, p=p, n_iter=n_iter)
+        step = f"asls baseline estimate (lam={lam:g}, p={p:g})"
+        return replace(self, signal=baseline, processing=self.processing + (step,))
+
+    def correct_baseline(
+        self, *, lam: float = 1e6, p: float = 0.01, n_iter: int = 10
+    ) -> "Chromatogram":
+        """Return a new Chromatogram with the baseline removed (asymmetric least squares).
+
+        Fits a smooth curve along the lower edge of the signal, leaving out
+        the peaks, and subtracts it (Eilers & Boelens, 2005).
+
+        Parameters
+        ----------
+        lam : float, default 1e6
+            Smoothness; larger gives a stiffer baseline. Typical values are
+            1e4 to 1e9; the right value depends on the number of points.
+        p : float, default 0.01
+            Asymmetry, between 0 and 1; smaller keeps the baseline further
+            below the peaks. Typical values are 0.001 to 0.05.
+        n_iter : int, default 10
+            Largest number of reweighting steps.
+
+        Examples
+        --------
+        >>> corrected = chromatogram.correct_baseline(lam=1e7, p=0.01)
+        """
+        baseline = asls_baseline(self.signal, lam=lam, p=p, n_iter=n_iter)
+        step = f"asls baseline correction (lam={lam:g}, p={p:g})"
+        return replace(self, signal=self.signal - baseline, processing=self.processing + (step,))
+
+    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "Chromatogram":
+        """Return a new Chromatogram smoothed with a Savitzky-Golay filter along time.
+
+        Parameters
+        ----------
+        window : float
+            Window width in min, rounded to the nearest odd number of points.
+            Keep it well below the peak width, or peaks get flattened.
+        polyorder : int, default 2
+            Order of the fitted polynomial.
+        deriv : int, default 0
+            Derivative order (mAU/min for 1).
+
+        Examples
+        --------
+        >>> smooth = chromatogram.savgol(0.05)
+        """
+        signal, n_points = savgol_smooth(
+            self.signal, self.rt, window, polyorder=polyorder, deriv=deriv, unit="min"
+        )
+        step = (
+            f"savgol (window={window:g} min = {n_points} points, "
+            f"polyorder={polyorder}, deriv={deriv})"
+        )
+        return replace(self, signal=signal, processing=self.processing + (step,))
 
 
 class _TraceSet:
@@ -120,6 +218,13 @@ class _TraceSet:
         """Sample names, in order."""
         return [trace.meta.sample_name for trace in self._traces]
 
+    def _apply(self, method: str, *args, **kwargs):
+        """Call a method on every trace and return a new set with the results."""
+        return type(self)(
+            [getattr(trace, method)(*args, **kwargs) for trace in self._traces],
+            self._run_index,
+        )
+
     def _index(self) -> pd.MultiIndex:
         return pd.MultiIndex.from_arrays(
             [list(self._run_index), self.names], names=["run", "sample_name"]
@@ -164,6 +269,23 @@ class ChromatogramSet(_TraceSet):
                 f"because the runs have different wavelength axes."
             )
 
+    def estimate_baseline(self, *, lam: float = 1e6, p: float = 0.01, n_iter: int = 10) -> "ChromatogramSet":
+        """Return the baseline of every chromatogram; see ``Chromatogram.correct_baseline``."""
+        return self._apply("estimate_baseline", lam=lam, p=p, n_iter=n_iter)
+
+    def correct_baseline(self, *, lam: float = 1e6, p: float = 0.01, n_iter: int = 10) -> "ChromatogramSet":
+        """Remove the baseline from every chromatogram; see ``Chromatogram.correct_baseline``.
+
+        Examples
+        --------
+        >>> corrected = seq.get_chromatogram(270).correct_baseline(lam=1e7)
+        """
+        return self._apply("correct_baseline", lam=lam, p=p, n_iter=n_iter)
+
+    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "ChromatogramSet":
+        """Smooth every chromatogram; see ``Chromatogram.savgol`` (window in min)."""
+        return self._apply("savgol", window, polyorder=polyorder, deriv=deriv)
+
     def to_numpy(self, *, rt_grid=None, rt_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
         """Return (rt, X) with X of shape (n_runs, n_time), in mAU.
 
@@ -205,6 +327,10 @@ class SpectrumSet(_TraceSet):
     _axis = "wl"
     _axis_label = "wl_nm"
     _unit = "nm"
+
+    def savgol(self, window: float, *, polyorder: int = 2, deriv: int = 0) -> "SpectrumSet":
+        """Smooth every spectrum; see ``Spectrum.savgol`` (window in nm)."""
+        return self._apply("savgol", window, polyorder=polyorder, deriv=deriv)
 
     def to_numpy(self, *, wl_grid=None, wl_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
         """Return (wl, X) with X of shape (n_runs, n_wl), in mAU.
