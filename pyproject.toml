@@ -5,9 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hplcdad"
 version = "0.1.0"
-requires-python = ">=3.10"
-dependencies = ["numpy", "pandas", "scipy", "pybaselines"]
+description = "Preprocessing and analysis of HPLC-DAD data"
+authors = [{ name = "Jeppe Aarup Andersen"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.5",
+    "pandas>=3.1",
+    "scipy>=1.18",
+    "pybaselines>=1.2",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.urls]
+Repository = "https://github.com/jeppeaarup/hplcdad"
 
 [project.optional-dependencies]
-hdf5 = ["h5py"]
-dev = ["pytest", "xarray", "h5netcdf"]
+hdf5 = ["h5py>=3.16"]
+dev = ["pytest>=9.2", "xarray>=2026.9", "h5netcdf>=1.8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
