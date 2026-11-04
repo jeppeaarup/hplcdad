@@ -122,7 +122,7 @@ run.to_chromeleon("exports/BLANK-01.txt")
 seq.to_chromeleon("exports/")      # one .txt file per run
 ```
 
-Values are written with 6 decimals, as Chromeleon does. Metadata the run does not have (e.g. volume and vial position for runs read from a `.cmbx`) are left empty, and the injection time is written without a UTC offset. `DADRun.from_chromeleon` reads the files back.
+Values are written with 6 decimals, as Chromeleon does. Metadata the run does not have (e.g. volume and vial position for runs read from a `.cmbx`) are left empty, and the injection time gets the UTC offset of the instrument's time zone (default `timezone="Europe/Copenhagen"`). `DADRun.from_chromeleon` reads the files back.
 
 ## How it works
 

@@ -227,12 +227,14 @@ class DADSequence:
             run.to_hdf5(path, overwrite=overwrite, compression_level=compression_level)
         return paths
 
-    def to_chromeleon(self, folder, *, overwrite: bool = False) -> list[Path]:
+    def to_chromeleon(
+        self, folder, *, overwrite: bool = False, timezone: str = "Europe/Copenhagen"
+    ) -> list[Path]:
         """Save every run as a Chromeleon 3D field text export in ``folder``.
 
         Files are named like ``to_hdf5`` names them, with ``.txt``
         (``BLANK-01.txt``; ``OPTI_01 (836.smp).txt`` when names repeat).
-        See ``DADRun.to_chromeleon`` for what is written.
+        See ``DADRun.to_chromeleon`` for what is written and for ``timezone``.
 
         Raises
         ------
@@ -247,7 +249,7 @@ class DADSequence:
         """
         paths = self._file_paths(folder, ".txt", overwrite)
         for run, path in zip(self._runs, paths):
-            run.to_chromeleon(path, overwrite=overwrite)
+            run.to_chromeleon(path, overwrite=overwrite, timezone=timezone)
         return paths
 
     def _file_paths(self, folder, suffix: str, overwrite: bool) -> list[Path]:

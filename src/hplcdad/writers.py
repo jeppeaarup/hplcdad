@@ -8,8 +8,10 @@ DADRun.from_chromeleon reads them back.
 """
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DECIMALS = 6
+DEFAULT_TIMEZONE = "Europe/Copenhagen"
 
 
 def _package_version():
@@ -30,17 +32,29 @@ def _wavelength(value):
     return text + "0" if text.endswith(".") else text
 
 
-def _inject_time(moment):
-    """Format like Chromeleon's 'Inject Time', e.g. '10/21/2026 1:25:22 PM'.
+def _inject_time(moment, timezone):
+    """Format like Chromeleon's 'Inject Time', e.g. '10/21/2026 1:25:22 PM +02:00'.
 
-    The UTC offset Chromeleon adds is left out: DADMeta holds instrument
-    local time without a time zone.
+    DADMeta holds instrument local time without a time zone, so the UTC
+    offset is worked out from ``timezone`` for that date (summer time
+    included).
     """
+    try:
+        zone = ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(
+            f"Unknown time zone {timezone!r}; use an IANA name such as 'Europe/Copenhagen'."
+        ) from None
+    offset_minutes = int(moment.replace(tzinfo=zone).utcoffset().total_seconds() // 60)
+    sign = "+" if offset_minutes >= 0 else "-"
+    hours, minutes = divmod(abs(offset_minutes), 60)
+
     hour = moment.hour % 12 or 12
     half = "AM" if moment.hour < 12 else "PM"
     return (
         f"{moment.month}/{moment.day}/{moment.year} "
-        f"{hour}:{moment.minute:02d}:{moment.second:02d} {half}"
+        f"{hour}:{moment.minute:02d}:{moment.second:02d} {half} "
+        f"{sign}{hours:02d}:{minutes:02d}"
     )
 
 
@@ -48,7 +62,7 @@ def _text(value):
     return "" if value is None else str(value)
 
 
-def write_chromeleon(run, path, *, overwrite=False):
+def write_chromeleon(run, path, *, overwrite=False, timezone=DEFAULT_TIMEZONE):
     """Write a DADRun as a Chromeleon 3D field text export. Internal; users call DADRun.to_chromeleon."""
     path = Path(path)
     if path.exists() and not overwrite:
@@ -78,7 +92,7 @@ def write_chromeleon(run, path, *, overwrite=False):
         f"Instrument Method\t{_text(meta.method)}",
         "Type\t",
         "Status\t",
-        f"Inject Time\t{_inject_time(meta.injection_datetime)}",
+        f"Inject Time\t{_inject_time(meta.injection_datetime, timezone)}",
         f"Volume (µL)\t{volume}",
         "Dilution Factor\t",
         "Weight\t",

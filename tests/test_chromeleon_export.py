@@ -53,7 +53,7 @@ def test_layout_matches_chromeleon(tmp_path):
     assert raw.startswith(b"\xef\xbb\xbfURL\t")        # UTF-8 byte order mark
     text = raw.decode("utf-8-sig")
     assert "\r\n" in text and "\n" not in text.replace("\r\n", "")
-    assert "Inject Time\t10/21/2026 1:05:07 PM\r\n" in text
+    assert "Inject Time\t10/21/2026 1:05:07 PM +02:00\r\n" in text   # summer time
     assert "\t-1,234.567890\t" in text
     assert "\r\nRaw Data:\r\nTime (min)\tIntegr.Time (s)\t190.0\t192.0\t" in text
 
@@ -82,3 +82,22 @@ def test_sequence_names_repeated_samples(tmp_path):
     paths = seq.to_chromeleon(tmp_path)
     assert sorted(p.name for p in paths) == ["A (1.smp).txt", "A (2.smp).txt", "B.txt"]
     assert len(DADSequence.from_chromeleon(tmp_path)) == 3
+
+
+@pytest.mark.parametrize(
+    "when, timezone, expected",
+    [
+        (datetime(2026, 11, 2, 21, 54, 20), "Europe/Copenhagen", "11/2/2026 9:54:20 PM +01:00"),
+        (datetime(2026, 7, 1, 9, 0, 0), "Europe/Copenhagen", "7/1/2026 9:00:00 AM +02:00"),
+        (datetime(2026, 7, 1, 9, 0, 0), "UTC", "7/1/2026 9:00:00 AM +00:00"),
+        (datetime(2026, 7, 1, 9, 0, 0), "America/New_York", "7/1/2026 9:00:00 AM -04:00"),
+    ],
+)
+def test_inject_time_has_utc_offset(tmp_path, when, timezone, expected):
+    path = make_run(when=when).to_chromeleon(tmp_path / "run.txt", timezone=timezone)
+    assert f"Inject Time\t{expected}\r\n" in path.read_text(encoding="utf-8-sig")
+
+
+def test_unknown_timezone(tmp_path):
+    with pytest.raises(ValueError, match="time zone"):
+        make_run().to_chromeleon(tmp_path / "run.txt", timezone="Mars/Olympus")

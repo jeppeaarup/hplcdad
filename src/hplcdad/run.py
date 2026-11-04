@@ -139,7 +139,7 @@ class DADRun:
         """
         return write_hdf5(self, path, overwrite=overwrite, compression_level=compression_level)
 
-    def to_chromeleon(self, path, *, overwrite: bool = False):
+    def to_chromeleon(self, path, *, overwrite: bool = False, timezone: str = "Europe/Copenhagen"):
         """Save the run as a Chromeleon 3D field text export and return its path.
 
         Writes the layout Chromeleon 7.3.2 uses for its tab-separated 3D
@@ -150,8 +150,7 @@ class DADRun:
         -----
         - Signal values are written with 6 decimals, like Chromeleon does,
           so they are rounded to 1e-6 mAU.
-        - Metadata fields that are None are left empty. The injection time is
-          written without a UTC offset. The URL line is filled in only when
+        - Metadata fields that are None are left empty. The URL line is filled in only when
           the run has an ``injection_id``, with "hplcdad" as host, so it does
           not point to a real data vault.
 
@@ -161,12 +160,16 @@ class DADRun:
             Where to write; ``.txt`` is the usual extension.
         overwrite : bool, default False
             Replace an existing file instead of raising FileExistsError.
+        timezone : str, default "Europe/Copenhagen"
+            Time zone of the instrument, as an IANA name. The run's injection
+            time is local time without a zone, so this sets the UTC offset
+            written after it (e.g. "+02:00" in summer, "+01:00" in winter).
 
         Examples
         --------
         >>> run.to_chromeleon("exports/BLANK-01.txt")
         """
-        return write_chromeleon(self, path, overwrite=overwrite)
+        return write_chromeleon(self, path, overwrite=overwrite, timezone=timezone)
 
 
     def get_chromatogram(
