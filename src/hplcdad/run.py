@@ -8,21 +8,21 @@ from .writers import write_chromeleon
 from .traces import Chromatogram, Spectrum, extract_spectrum, extract_chromatogram
 
 class DADRun:
-    """One DAD run: intensity is time x wavelength (time in min, wl in nm, mAU)."""
+    """One DAD run: intensity is time x wavelength (time in min, wavelength in nm, mAU)."""
 
-    def __init__(self, time: np.ndarray, wl: np.ndarray, intensity: np.ndarray, meta: DADMeta):
+    def __init__(self, time: np.ndarray, wavelength: np.ndarray, intensity: np.ndarray, meta: DADMeta):
         time = np.asarray(time)
-        wl = np.asarray(wl)
+        wavelength = np.asarray(wavelength)
         intensity = np.asarray(intensity)
 
-        if intensity.shape != (len(time), len(wl)):
+        if intensity.shape != (len(time), len(wavelength)):
             raise ValueError(
                 f"Intensity shape {intensity.shape} does not match the axes: "
-                f"expected ({len(time)}, {len(wl)}) = (time, wavelength)."
+                f"expected ({len(time)}, {len(wavelength)}) = (time, wavelength)."
             )
 
         self.time = time
-        self.wl = wl
+        self.wavelength = wavelength
         self.intensity = intensity
         self.meta = meta
 
@@ -31,7 +31,7 @@ class DADRun:
             f"DADRun(sample={self.meta.sample_name!r}, "
             f"{self.intensity.shape[0]} x {self.intensity.shape[1]}, "
             f"{self.time[0]:g}-{self.time[-1]:g} min, "
-            f"{self.wl[0]:g}-{self.wl[-1]:g} nm)"
+            f"{self.wavelength[0]:g}-{self.wavelength[-1]:g} nm)"
         )
 
     @classmethod
@@ -175,7 +175,7 @@ class DADRun:
     def get_chromatogram(
         self,
         wavelength: float,
-        wl_tolerance: float = 1.0,
+        wavelength_tolerance: float = 1.0,
         *,
         time_min: float | None = None,
         time_max: float | None = None,
@@ -191,7 +191,7 @@ class DADRun:
         ----------
         wavelength : float
             Wavelength in nm.
-        wl_tolerance : float, default 1.0
+        wavelength_tolerance : float, default 1.0
             Largest accepted distance, in nm, between the requested wavelength
             and the nearest wavelength in the run.
         time_min, time_max : float, optional
@@ -209,7 +209,7 @@ class DADRun:
         Raises
         ------
         ValueError
-            If the nearest wavelength is farther away than ``wl_tolerance``,
+            If the nearest wavelength is farther away than ``wavelength_tolerance``,
             or if the time range contains no points.
 
         Examples
@@ -220,7 +220,7 @@ class DADRun:
         return extract_chromatogram(
             self,
             wavelength,
-            wl_tolerance,
+            wavelength_tolerance,
             time_min=time_min,
             time_max=time_max,
         )
@@ -231,8 +231,8 @@ class DADRun:
         time: float,
         time_tolerance: float = 0.5,
         *,
-        wl_min: float | None = None,
-        wl_max: float | None = None,
+        wavelength_min: float | None = None,
+        wavelength_max: float | None = None,
     ) -> Spectrum:
         """Return the spectrum at a given time, optionally limited to a wavelength range.
 
@@ -247,7 +247,7 @@ class DADRun:
         time_tolerance : float, default 0.5
             Largest accepted distance, in minutes, between the requested time
             and the nearest time point in the run.
-        wl_min, wl_max : float, optional
+        wavelength_min, wavelength_max : float, optional
             Lower and upper wavelength limit in nm, both included. Leave out
             either one (or both) for no limit on that side.
 
@@ -255,7 +255,7 @@ class DADRun:
         -------
         Spectrum
             With the attributes ``time`` (time used), ``requested_time``,
-            ``wl`` (nm), ``intensity`` (mAU), and ``meta``. The arrays are
+            ``wavelength`` (nm), ``intensity`` (mAU), and ``meta``. The arrays are
             copies, so changing them does not change the run.
 
         Raises
@@ -267,24 +267,27 @@ class DADRun:
         Examples
         --------
         >>> spectrum = run.get_spectrum(2.0)
-        >>> spectrum = run.get_spectrum(2.0, wl_min=220, wl_max=400)
+        >>> spectrum = run.get_spectrum(2.0, wavelength_min=220, wavelength_max=400)
         """
         return extract_spectrum(
             self,
             time,
             time_tolerance,
-            wl_min=wl_min,
-            wl_max=wl_max,
+            wavelength_min=wavelength_min,
+            wavelength_max=wavelength_max,
         )
 
-    
+    # Short names for the two getters: run.chromatogram(254), run.spectrum(2.0).
+    chromatogram = get_chromatogram
+    spectrum = get_spectrum
+
     def crop(
     self,
     *,
     time_min: float | None = None,
     time_max: float | None = None,
-    wl_min: float | None = None,
-    wl_max: float | None = None,
+    wavelength_min: float | None = None,
+    wavelength_max: float | None = None,
 ) -> "DADRun":
         """Return a new DADRun limited to a time and/or wavelength range.
 
@@ -300,12 +303,12 @@ class DADRun:
         Examples
         --------
         >>> window = run.crop(time_min=5.0, time_max=20.0)
-        >>> window = run.crop(time_min=5.0, time_max=20.0, wl_min=220, wl_max=400)
+        >>> window = run.crop(time_min=5.0, time_max=20.0, wavelength_min=220, wavelength_max=400)
         """
         t_start = 0 if time_min is None else int(np.searchsorted(self.time, time_min, side="left"))
         t_stop = len(self.time) if time_max is None else int(np.searchsorted(self.time, time_max, side="right"))
-        w_start = 0 if wl_min is None else int(np.searchsorted(self.wl, wl_min, side="left"))
-        w_stop = len(self.wl) if wl_max is None else int(np.searchsorted(self.wl, wl_max, side="right"))
+        w_start = 0 if wavelength_min is None else int(np.searchsorted(self.wavelength, wavelength_min, side="left"))
+        w_stop = len(self.wavelength) if wavelength_max is None else int(np.searchsorted(self.wavelength, wavelength_max, side="right"))
 
         if t_start >= t_stop:
             raise ValueError(
@@ -314,13 +317,13 @@ class DADRun:
             )
         if w_start >= w_stop:
             raise ValueError(
-                f"Wavelength range ({wl_min}, {wl_max}) nm contains no points; "
-                f"the run covers {self.wl[0]:g} to {self.wl[-1]:g} nm."
+                f"Wavelength range ({wavelength_min}, {wavelength_max}) nm contains no points; "
+                f"the run covers {self.wavelength[0]:g} to {self.wavelength[-1]:g} nm."
             )
 
         return DADRun(
             self.time[t_start:t_stop].copy(),
-            self.wl[w_start:w_stop].copy(),
+            self.wavelength[w_start:w_stop].copy(),
             self.intensity[t_start:t_stop, w_start:w_stop].copy(),
             self.meta,
         )

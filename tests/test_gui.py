@@ -12,15 +12,15 @@ from hplcdad.readers.chromeleon_cmbx import count_cmbx_fields
 
 def make_run(number):
     time = np.arange(50) * 0.01
-    wl = np.arange(200.0, 220.0, 2.0)
-    intensity = np.random.default_rng(number).normal(0, 10, (len(time), len(wl)))
+    wavelength = np.arange(200.0, 220.0, 2.0)
+    intensity = np.random.default_rng(number).normal(0, 10, (len(time), len(wavelength)))
     meta = DADMeta(
         sample_name=f"Brew {number}",
         sequence="Test sequence",
         injection_datetime=datetime(2026, 10, 21, 13, number, 0),
         injection_number=number,
     )
-    return DADRun(time, wl, intensity, meta)
+    return DADRun(time, wavelength, intensity, meta)
 
 
 @pytest.fixture

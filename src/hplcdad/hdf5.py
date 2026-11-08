@@ -4,8 +4,8 @@ One file per run, laid out with HDF5 dimension scales so that xarray can open
 it too (xarray.open_dataset(path, engine="h5netcdf")):
 
     /time        retention time, float64, attribute units="min"
-    /wl          wavelength,     float64, attribute units="nm"
-    /intensity   (time, wl),     float64, attribute units="mAU", compressed
+    /wavelength  wavelength,     float64, attribute units="nm"
+    /intensity   (time, wavelength), float64, attribute units="mAU", compressed
     root attributes: the DADMeta fields (None fields are left out), plus
         hplcdad_schema_version, created (UTC, ISO 8601) and, when the source
         file still exists, source_sha256.
@@ -23,7 +23,7 @@ import numpy as np
 from .meta import DADMeta
 from .raw import RawRun
 
-SCHEMA_VERSION = 2   # 2: datasets renamed rt -> time, signal -> intensity; version 1 files are still read
+SCHEMA_VERSION = 3   # 2: rt -> time, signal -> intensity; 3: wl -> wavelength. Older files are still read
 META_TYPES = {f.name: f.type for f in fields(DADMeta)}
 INT_FIELDS = {"injection_number"}
 FLOAT_FIELDS = {"injection_volume_ul"}
@@ -62,15 +62,15 @@ def write_hdf5(run, path, *, overwrite=False, compression_level=4):
         time.attrs["long_name"] = "retention time"
         time.make_scale("time")
 
-        wl = file.create_dataset("wl", data=run.wl)
-        wl.attrs["units"] = "nm"
-        wl.attrs["long_name"] = "wavelength"
-        wl.make_scale("wl")
+        wavelength = file.create_dataset("wavelength", data=run.wavelength)
+        wavelength.attrs["units"] = "nm"
+        wavelength.attrs["long_name"] = "wavelength"
+        wavelength.make_scale("wavelength")
 
         intensity = file.create_dataset(
             "intensity",
             data=run.intensity,
-            chunks=(min(len(run.time), 1024), len(run.wl)),
+            chunks=(min(len(run.time), 1024), len(run.wavelength)),
             compression="gzip",
             compression_opts=compression_level,
             shuffle=True,
@@ -78,7 +78,7 @@ def write_hdf5(run, path, *, overwrite=False, compression_level=4):
         intensity.attrs["units"] = "mAU"
         intensity.attrs["long_name"] = "absorbance"
         intensity.dims[0].attach_scale(time)
-        intensity.dims[1].attach_scale(wl)
+        intensity.dims[1].attach_scale(wavelength)
 
         attrs = file.attrs
         attrs["hplcdad_schema_version"] = SCHEMA_VERSION
@@ -108,9 +108,12 @@ def read_hdf5(path):
                 f"{str(path)!r} uses schema version {version}, but this version of "
                 f"hplcdad only reads up to {SCHEMA_VERSION}. Update hplcdad."
             )
-        # Schema 1 called the datasets "rt" and "signal".
-        time_name, intensity_name = ("rt", "signal") if int(version) == 1 else ("time", "intensity")
-        for name in (time_name, "wl", intensity_name):
+        # Older schemas used shorter dataset names.
+        version = int(version)
+        time_name = "rt" if version == 1 else "time"
+        intensity_name = "signal" if version == 1 else "intensity"
+        wavelength_name = "wl" if version < 3 else "wavelength"
+        for name in (time_name, wavelength_name, intensity_name):
             if name not in file:
                 raise ValueError(f"{str(path)!r} has no {name!r} dataset.")
 
@@ -138,7 +141,7 @@ def read_hdf5(path):
 
         return RawRun(
             time=np.array(file[time_name]),
-            wl=np.array(file["wl"]),
+            wavelength=np.array(file[wavelength_name]),
             intensity=np.array(file[intensity_name]),
             meta=meta,
             time_unit=file[time_name].attrs.get("units", "min"),

@@ -52,6 +52,10 @@ print(run.intensity.shape)   # (number of time points, number of wavelengths)
 
 chromatogram = run.get_chromatogram(254)   # nearest wavelength to 254 nm
 spectrum = run.get_spectrum(2.0)           # nearest time point to 2.0 min
+
+# Short forms of the same two calls (also on DADSequence):
+chromatogram = run.chromatogram(254)
+spectrum = run.spectrum(2.0)
 ```
 
 Read a whole sequence straight from a Chromeleon backup, and save it as HDF5:
@@ -69,8 +73,8 @@ seq = DADSequence.from_hdf5("converted/")
 | Attribute | Description |
 |---|---|
 | `time` | Time axis, 1D array, in minutes |
-| `wl` | Wavelength axis, 1D array, in nm |
-| `intensity` | Intensity matrix, shape `(len(time), len(wl))` (time × wavelength), in mAU |
+| `wavelength` | Wavelength axis, 1D array, in nm |
+| `intensity` | Intensity matrix, shape `(len(time), len(wavelength))` (time × wavelength), in mAU |
 | `meta` | A `DADMeta` object (see below) |
 
 Every `DADRun` is guaranteed to have these units and this layout, however it was created. The constructor raises a `ValueError` if the intensity shape does not match the axes.
@@ -114,8 +118,8 @@ Fields the file does not provide are `None`.
 | Path | Content |
 |---|---|
 | `/time` | Time axis, float64, `units="min"` |
-| `/wl` | Wavelength axis, float64, `units="nm"` |
-| `/intensity` | Intensity, `(time, wl)`, float64, `units="mAU"`, gzip-compressed |
+| `/wavelength` | Wavelength axis, float64, `units="nm"` |
+| `/intensity` | Intensity, `(time, wavelength)`, float64, `units="mAU"`, gzip-compressed |
 | root attributes | All `DADMeta` fields that are not `None`, plus `hplcdad_schema_version`, `created` (UTC) and `source_sha256` (checksum of the source file, when it still exists) |
 
 A run read back with `from_hdf5` is identical to the one written. The checksum ties each file to the raw data it came from. The files use HDF5 dimension scales, so they also open in xarray with labelled axes:

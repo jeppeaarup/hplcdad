@@ -1,14 +1,14 @@
 import numpy as np
 from .raw import RawRun, TIME_UNITS_TO_MIN, INTENSITY_UNITS_TO_MAU
 
-def orient_matrix(time, wl, intensity, *, time_as_rows=None):
+def orient_matrix(time, wavelength, intensity, *, time_as_rows=None):
     """Return intensity as time x wavelength, transposing if needed.
 
     time_as_rows: True if time runs along the rows, False if wavelength does,
     None if unknown. Only needed to resolve square matrices.
     """
     time = np.asarray(time)
-    wl = np.asarray(wl)
+    wavelength = np.asarray(wavelength)
     intensity = np.asarray(intensity)
 
     if intensity.ndim != 2:
@@ -18,16 +18,16 @@ def orient_matrix(time, wl, intensity, *, time_as_rows=None):
         )
 
     n_time = len(time)
-    n_wl = len(wl)
+    n_wavelength = len(wavelength)
     shape = intensity.shape
 
-    matches_as_is = shape == (n_time, n_wl)
-    matches_transposed = shape == (n_wl, n_time)
+    matches_as_is = shape == (n_time, n_wavelength)
+    matches_transposed = shape == (n_wavelength, n_time)
 
     if not matches_as_is and not matches_transposed:
         raise ValueError(
             f"Intensity shape {shape} fits neither (time, wavelength) = "
-            f"({n_time}, {n_wl}) nor (wavelength, time) = ({n_wl}, {n_time})."
+            f"({n_time}, {n_wavelength}) nor (wavelength, time) = ({n_wavelength}, {n_time})."
         )
 
     if matches_as_is and matches_transposed:
@@ -71,29 +71,29 @@ def convert_units(time, intensity, time_unit, intensity_unit):
     return time_min, intensity_mau
 
 
-def validate(time, wl, intensity):
+def validate(time, wavelength, intensity):
     """Raise ValueError unless the axes and intensity form a consistent run."""
     time = np.asarray(time)
-    wl = np.asarray(wl)
+    wavelength = np.asarray(wavelength)
     intensity = np.asarray(intensity)
 
-    if time.ndim != 1 or wl.ndim != 1:
+    if time.ndim != 1 or wavelength.ndim != 1:
         raise ValueError(
             f"Axes must be 1-dimensional, got time with shape {time.shape} "
-            f"and wl with shape {wl.shape}."
+            f"and wavelength with shape {wavelength.shape}."
         )
-    if len(time) == 0 or len(wl) == 0:
+    if len(time) == 0 or len(wavelength) == 0:
         raise ValueError("Time and wavelength axes must not be empty.")
-    if intensity.shape != (len(time), len(wl)):
+    if intensity.shape != (len(time), len(wavelength)):
         raise ValueError(
             f"Intensity shape {intensity.shape} does not match the axes: "
-            f"expected ({len(time)}, {len(wl)}) = (time, wavelength)."
+            f"expected ({len(time)}, {len(wavelength)}) = (time, wavelength)."
         )
-    if not (np.isfinite(time).all() and np.isfinite(wl).all()):
+    if not (np.isfinite(time).all() and np.isfinite(wavelength).all()):
         raise ValueError("Axes contain NaN or infinite values.")
     if np.any(np.diff(time) <= 0):
         raise ValueError("Time axis must be strictly increasing.")
-    if np.any(np.diff(wl) <= 0):
+    if np.any(np.diff(wavelength) <= 0):
         raise ValueError("Wavelength axis must be strictly increasing.")
     n_bad = intensity.size - np.count_nonzero(np.isfinite(intensity))
     if n_bad:
@@ -101,9 +101,9 @@ def validate(time, wl, intensity):
 
 
 def normalise(raw: RawRun):
-    """Clean a RawRun; return (time, wl, intensity, meta) ready for DADRun."""
+    """Clean a RawRun; return (time, wavelength, intensity, meta) ready for DADRun."""
     time, intensity = convert_units(raw.time, raw.intensity, raw.time_unit, raw.intensity_unit)
-    wl = np.asarray(raw.wl)
-    intensity = orient_matrix(time, wl, intensity, time_as_rows=raw.time_as_rows)
-    validate(time, wl, intensity)
-    return time, wl, intensity, raw.meta
+    wavelength = np.asarray(raw.wavelength)
+    intensity = orient_matrix(time, wavelength, intensity, time_as_rows=raw.time_as_rows)
+    validate(time, wavelength, intensity)
+    return time, wavelength, intensity, raw.meta

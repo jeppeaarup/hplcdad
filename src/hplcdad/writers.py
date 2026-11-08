@@ -100,8 +100,8 @@ def write_chromeleon(run, path, *, overwrite=False, timezone=DEFAULT_TIMEZONE):
         "Raw Data Information:",
         f"Time Min. (min)\t{_number(run.time[0])}",
         f"Time Max. (min)\t{_number(run.time[-1])}",
-        f"Scan Min. (nm)\t{_number(run.wl[0])}",
-        f"Scan Max. (nm)\t{_number(run.wl[-1])}",
+        f"Scan Min. (nm)\t{_number(run.wavelength[0])}",
+        f"Scan Max. (nm)\t{_number(run.wavelength[-1])}",
         f"Intensity Min. (mAU)\t{_number(run.intensity.min())}",
         f"Intensity Max. (mAU)\t{_number(run.intensity.max())}",
         f"Spectra\t{len(run.time)}",
@@ -113,7 +113,7 @@ def write_chromeleon(run, path, *, overwrite=False, timezone=DEFAULT_TIMEZONE):
         "Driver Name\t",
         "",
         "Raw Data:",
-        "Time (min)\tIntegr.Time (s)\t" + "\t".join(_wavelength(w) for w in run.wl),
+        "Time (min)\tIntegr.Time (s)\t" + "\t".join(_wavelength(w) for w in run.wavelength),
     ]
 
     number = f"{{:,.{DECIMALS}f}}".format

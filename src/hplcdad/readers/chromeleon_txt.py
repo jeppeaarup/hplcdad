@@ -205,7 +205,7 @@ def read_chromeleon(path, *, time_unit="min", intensity_unit="mAU", max_metadata
 
     return RawRun(
         time=np.array(time),
-        wl=np.array(wavelength),
+        wavelength=np.array(wavelength),
         intensity=np.array(intensity_rows),
         meta=meta,
         time_unit=time_unit,

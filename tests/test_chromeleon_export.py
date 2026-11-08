@@ -14,8 +14,8 @@ EXPORTED_FIELDS = (
 
 def make_run(name="Brew 1", injection_id="556.smp", number=1, when=datetime(2026, 10, 21, 13, 5, 7)):
     time = 0.0002 + np.arange(300) * 0.4 / 60
-    wl = np.arange(190.0, 642.0, 2.0)
-    intensity = np.random.default_rng(number).normal(0, 300, (len(time), len(wl)))
+    wavelength = np.arange(190.0, 642.0, 2.0)
+    intensity = np.random.default_rng(number).normal(0, 300, (len(time), len(wavelength)))
     intensity[0, 0] = -1234.5678901   # thousands separator, negative
     intensity[1, 1] = 2500.25
     meta = DADMeta(
@@ -28,7 +28,7 @@ def make_run(name="Brew 1", injection_id="556.smp", number=1, when=datetime(2026
         method="20261019 - Beer bitter acids (JAA)",
         injection_id=injection_id,
     )
-    return DADRun(time, wl, intensity, meta)
+    return DADRun(time, wavelength, intensity, meta)
 
 
 @pytest.mark.parametrize(
@@ -42,7 +42,7 @@ def test_round_trip(tmp_path, when):
 
     assert np.abs(back.intensity - run.intensity).max() <= 5e-7 + 1e-9   # 6-decimal rounding
     assert np.abs(back.time - run.time).max() <= 5e-7 + 1e-9
-    assert np.array_equal(back.wl, run.wl)
+    assert np.array_equal(back.wavelength, run.wavelength)
     for field in EXPORTED_FIELDS:
         assert getattr(back.meta, field) == getattr(run.meta, field), field
 
@@ -60,7 +60,7 @@ def test_layout_matches_chromeleon(tmp_path):
 
 def test_missing_metadata_is_left_empty(tmp_path):
     run = make_run()
-    bare = DADRun(run.time, run.wl, run.intensity, DADMeta(
+    bare = DADRun(run.time, run.wavelength, run.intensity, DADMeta(
         sample_name="X", sequence="S", injection_datetime=datetime(2026, 1, 2, 3, 4, 5)))
     back = DADRun.from_chromeleon(bare.to_chromeleon(tmp_path / "bare.txt"))
     assert back.meta.injection_number is None

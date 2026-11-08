@@ -418,18 +418,18 @@ class DADSequence:
         >>> qcs = seq[table["sample_name"].str.startswith("QC")]
         """
         columns = list(META_FIELDS) + [
-            "n_time", "n_wl", "time_start", "time_end", "wl_start", "wl_end",
+            "n_time", "n_wavelength", "time_start", "time_end", "wavelength_start", "wavelength_end",
         ]
         rows = []
         for run in self._runs:
             row = asdict(run.meta)
             row.update(
                 n_time=len(run.time),
-                n_wl=len(run.wl),
+                n_wavelength=len(run.wavelength),
                 time_start=float(run.time[0]),
                 time_end=float(run.time[-1]),
-                wl_start=float(run.wl[0]),
-                wl_end=float(run.wl[-1]),
+                wavelength_start=float(run.wavelength[0]),
+                wavelength_end=float(run.wavelength[-1]),
             )
             rows.append(row)
         return pd.DataFrame(rows, columns=columns)
@@ -528,19 +528,19 @@ class DADSequence:
         *,
         time_min: float | None = None,
         time_max: float | None = None,
-        wl_min: float | None = None,
-        wl_max: float | None = None,
+        wavelength_min: float | None = None,
+        wavelength_max: float | None = None,
     ) -> "DADSequence":
         """Crop every run (see ``DADRun.crop``) and return a new DADSequence."""
         return DADSequence(
-            run.crop(time_min=time_min, time_max=time_max, wl_min=wl_min, wl_max=wl_max)
+            run.crop(time_min=time_min, time_max=time_max, wavelength_min=wavelength_min, wavelength_max=wavelength_max)
             for run in self._runs
         )
 
     def get_chromatogram(
         self,
         wavelength: float,
-        wl_tolerance: float = 1.0,
+        wavelength_tolerance: float = 1.0,
         *,
         time_min: float | None = None,
         time_max: float | None = None,
@@ -557,7 +557,7 @@ class DADSequence:
         >>> df = seq.get_chromatogram(314).to_pandas(time_grid="overlap")
         """
         return ChromatogramSet(
-            (run.get_chromatogram(wavelength, wl_tolerance, time_min=time_min, time_max=time_max)
+            (run.get_chromatogram(wavelength, wavelength_tolerance, time_min=time_min, time_max=time_max)
              for run in self._runs),
             run_index=range(len(self)),
         )
@@ -567,8 +567,8 @@ class DADSequence:
         time: float,
         time_tolerance: float = 0.5,
         *,
-        wl_min: float | None = None,
-        wl_max: float | None = None,
+        wavelength_min: float | None = None,
+        wavelength_max: float | None = None,
     ) -> SpectrumSet:
         """Return the spectrum of every run (see ``DADRun.get_spectrum``).
 
@@ -578,13 +578,17 @@ class DADSequence:
 
         Examples
         --------
-        >>> wl, X = seq.get_spectrum(12.4, wl_min=220, wl_max=400).to_numpy()
+        >>> wavelength, X = seq.get_spectrum(12.4, wavelength_min=220, wavelength_max=400).to_numpy()
         """
         return SpectrumSet(
-            (run.get_spectrum(time, time_tolerance, wl_min=wl_min, wl_max=wl_max)
+            (run.get_spectrum(time, time_tolerance, wavelength_min=wavelength_min, wavelength_max=wavelength_max)
              for run in self._runs),
             run_index=range(len(self)),
         )
+
+    # Short names for the two getters: seq.chromatogram(254), seq.spectrum(2.0).
+    chromatogram = get_chromatogram
+    spectrum = get_spectrum
 
     # ------------------------------------------------- arrays for chemometrics
 
@@ -593,7 +597,7 @@ class DADSequence:
         *,
         time_grid=None,
         time_atol: float = 1e-6,
-        wl_atol: float = 1e-6,
+        wavelength_atol: float = 1e-6,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return all runs as one runs x time x wavelength array.
 
@@ -608,22 +612,22 @@ class DADSequence:
             "overlap" interpolates onto the first run's time points inside
             the time range covered by every run. An array interpolates onto
             those times (min), which must lie inside every run.
-        time_atol, wl_atol : float
+        time_atol, wavelength_atol : float
             Tolerances (min, nm) when checking that axes are the same.
 
         Returns
         -------
         time : ndarray, shape (n_time,)
-        wl : ndarray, shape (n_wl,)
-        X : ndarray, shape (n_runs, n_time, n_wl), in mAU
+        wavelength : ndarray, shape (n_wavelength,)
+        X : ndarray, shape (n_runs, n_time, n_wavelength), in mAU
 
         Examples
         --------
-        >>> time, wl, X = seq.crop(time_min=5, time_max=40, wl_min=220, wl_max=400).stack()
+        >>> time, wavelength, X = seq.crop(time_min=5, time_max=40, wavelength_min=220, wavelength_max=400).stack()
         >>> X_unfolded = X.reshape(len(X), -1)   # runs x (time*wavelength)
         """
         self._require_runs()
-        wl = self._common_wl(wl_atol)
+        wavelength = self._common_wavelength(wavelength_atol)
         labels = [f"Run {i} ({name!r})" for i, name in enumerate(self.names)]
         time, X = align_traces(
             [run.time for run in self._runs],
@@ -634,15 +638,15 @@ class DADSequence:
             unit="min",
             labels=labels,
         )
-        return time, wl.copy(), X
+        return time, wavelength.copy(), X
 
-    def has_common_axes(self, time_atol: float = 1e-6, wl_atol: float = 1e-6) -> bool:
+    def has_common_axes(self, time_atol: float = 1e-6, wavelength_atol: float = 1e-6) -> bool:
         """True if every run has the same time and wavelength axes."""
         if len(self) == 0:
             return True
         ref = self._runs[0]
         return all(
-            same_axis(run.time, ref.time, time_atol) and same_axis(run.wl, ref.wl, wl_atol)
+            same_axis(run.time, ref.time, time_atol) and same_axis(run.wavelength, ref.wavelength, wavelength_atol)
             for run in self._runs[1:]
         )
 
@@ -652,13 +656,13 @@ class DADSequence:
         if len(self) == 0:
             raise ValueError("The sequence is empty.")
 
-    def _common_wl(self, atol: float) -> np.ndarray:
-        ref = self._runs[0].wl
+    def _common_wavelength(self, atol: float) -> np.ndarray:
+        ref = self._runs[0].wavelength
         for i, run in enumerate(self._runs[1:], start=1):
-            if not same_axis(run.wl, ref, atol):
+            if not same_axis(run.wavelength, ref, atol):
                 raise ValueError(
                     f"Run {i} ({run.meta.sample_name!r}) has a different wavelength "
-                    f"axis ({run.wl[0]:g}-{run.wl[-1]:g} nm, {len(run.wl)} points) "
+                    f"axis ({run.wavelength[0]:g}-{run.wavelength[-1]:g} nm, {len(run.wavelength)} points) "
                     f"than run 0 ({ref[0]:g}-{ref[-1]:g} nm, {len(ref)} points). "
                     f"Crop to a shared wavelength range first."
                 )

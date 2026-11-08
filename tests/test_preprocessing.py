@@ -82,8 +82,8 @@ def test_sets_apply_to_every_trace():
 
 
 def test_spectrum_savgol():
-    wl = np.arange(190.0, 642.0, 2.0)
-    spectrum = Spectrum(time=10.0, wl=wl, intensity=np.exp(-((wl - 270) / 20) ** 2), meta=META)
+    wavelength = np.arange(190.0, 642.0, 2.0)
+    spectrum = Spectrum(time=10.0, wavelength=wavelength, intensity=np.exp(-((wavelength - 270) / 20) ** 2), meta=META)
     smooth = spectrum.savgol(5)
-    assert smooth.intensity.shape == wl.shape
+    assert smooth.intensity.shape == wavelength.shape
     assert "5 points" in smooth.processing[0]

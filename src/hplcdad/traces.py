@@ -15,28 +15,28 @@ class Spectrum:
     """A spectrum extracted from a DAD run: intensity vs wavelength at one time."""
 
     time: float          # time point used, in min
-    wl: np.ndarray       # wavelength axis, in nm
+    wavelength: np.ndarray       # wavelength axis, in nm
     intensity: np.ndarray   # mAU
     meta: DADMeta
     requested_time: float | None = None   # time asked for, in min
     processing: tuple[str, ...] = ()      # steps applied, in order
 
     def __post_init__(self):
-        if np.shape(self.intensity) != np.shape(self.wl):
+        if np.shape(self.intensity) != np.shape(self.wavelength):
             raise ValueError(
                 f"Intensity shape {np.shape(self.intensity)} does not match "
-                f"wavelength axis shape {np.shape(self.wl)}."
+                f"wavelength axis shape {np.shape(self.wavelength)}."
             )
 
     def to_numpy(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return (wl, intensity) as copies."""
-        return self.wl.copy(), self.intensity.copy()
+        """Return (wavelength, intensity) as copies."""
+        return self.wavelength.copy(), self.intensity.copy()
 
     def to_pandas(self) -> pd.Series:
         """Return the intensity as a Series indexed by wavelength (nm)."""
         return pd.Series(
             self.intensity.copy(),
-            index=pd.Index(self.wl.copy(), name="wl_nm"),
+            index=pd.Index(self.wavelength.copy(), name="wavelength_nm"),
             name=self.meta.sample_name,
         )
 
@@ -59,7 +59,7 @@ class Spectrum:
         >>> first_derivative = spectrum.savgol(5, deriv=1)
         """
         intensity = savgol_smooth(
-            self.intensity, self.wl, window_length, polyorder=polyorder, deriv=deriv, unit="nm"
+            self.intensity, self.wavelength, window_length, polyorder=polyorder, deriv=deriv, unit="nm"
         )
         step = f"savgol (window_length={window_length} points, polyorder={polyorder}, deriv={deriv})"
         return replace(self, intensity=intensity, processing=self.processing + (step,))
@@ -170,7 +170,7 @@ class _TraceSet:
     DADSequence it came from, so labels survive slicing.
     """
 
-    _axis = ""        # "time" or "wl": attribute name of the x axis
+    _axis = ""        # "time" or "wavelength": attribute name of the x axis
     _axis_label = ""  # column index name in to_pandas()
     _unit = ""
 
@@ -320,27 +320,27 @@ class SpectrumSet(_TraceSet):
     labelled by (run, sample_name).
     """
 
-    _axis = "wl"
-    _axis_label = "wl_nm"
+    _axis = "wavelength"
+    _axis_label = "wavelength_nm"
     _unit = "nm"
 
     def savgol(self, window_length: int, *, polyorder: int = 2, deriv: int = 0) -> "SpectrumSet":
         """Smooth every spectrum; see ``Spectrum.savgol`` (window in points)."""
         return self._apply("savgol", window_length, polyorder=polyorder, deriv=deriv)
 
-    def to_numpy(self, *, wl_grid=None, wl_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
-        """Return (wl, X) with X of shape (n_runs, n_wl), in mAU.
+    def to_numpy(self, *, wavelength_grid=None, wavelength_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
+        """Return (wavelength, X) with X of shape (n_runs, n_wavelength), in mAU.
 
-        wl_grid works like ``time_grid`` in ``ChromatogramSet.to_numpy``.
+        wavelength_grid works like ``time_grid`` in ``ChromatogramSet.to_numpy``.
         """
-        return self._to_numpy(wl_grid, wl_atol)
+        return self._to_numpy(wavelength_grid, wavelength_atol)
 
-    def to_pandas(self, *, wl_grid=None, wl_atol: float = 1e-6) -> pd.DataFrame:
+    def to_pandas(self, *, wavelength_grid=None, wavelength_atol: float = 1e-6) -> pd.DataFrame:
         """Return a DataFrame with one row per run and one column per wavelength (nm).
 
         Rows are indexed by (run, sample_name).
         """
-        return self._to_pandas(wl_grid, wl_atol)
+        return self._to_pandas(wavelength_grid, wavelength_atol)
 
 
 # ---------------------------------------------------------------- alignment
@@ -425,8 +425,8 @@ def extract_spectrum(
     time: float,
     time_tolerance: float = 0.5,
     *,
-    wl_min: float | None = None,
-    wl_max: float | None = None,
+    wavelength_min: float | None = None,
+    wavelength_max: float | None = None,
 ) -> Spectrum:
     """Return the spectrum of `run` at the time point nearest to `time` (min).
 
@@ -443,18 +443,18 @@ def extract_spectrum(
             f"{chosen_time} min, more than {time_tolerance} min away."
         )
 
-    start = 0 if wl_min is None else int(np.searchsorted(run.wl, wl_min, side="left"))
-    stop = len(run.wl) if wl_max is None else int(np.searchsorted(run.wl, wl_max, side="right"))
+    start = 0 if wavelength_min is None else int(np.searchsorted(run.wavelength, wavelength_min, side="left"))
+    stop = len(run.wavelength) if wavelength_max is None else int(np.searchsorted(run.wavelength, wavelength_max, side="right"))
 
     if start >= stop:
         raise ValueError(
-            f"Wavelength range ({wl_min}, {wl_max}) nm contains no points; "
-            f"the run covers {run.wl[0]} to {run.wl[-1]} nm."
+            f"Wavelength range ({wavelength_min}, {wavelength_max}) nm contains no points; "
+            f"the run covers {run.wavelength[0]} to {run.wavelength[-1]} nm."
         )
 
     return Spectrum(
         time=float(chosen_time),
-        wl=run.wl[start:stop].copy(),
+        wavelength=run.wavelength[start:stop].copy(),
         intensity=run.intensity[idx, start:stop].copy(),
         meta=run.meta,
         requested_time=time,
@@ -464,24 +464,24 @@ def extract_spectrum(
 def extract_chromatogram(
     run,
     wavelength: float,
-    wl_tolerance: float = 1.0,
+    wavelength_tolerance: float = 1.0,
     *,
     time_min: float | None = None,
     time_max: float | None = None,
 ) -> Chromatogram:
     """Return the chromatogram of `run` at the wavelength nearest to `wavelength` (nm).
 
-    Raises ValueError if that wavelength is more than `wl_tolerance` nm away,
+    Raises ValueError if that wavelength is more than `wavelength_tolerance` nm away,
     or if the time range contains no points. Used by DADRun.get_chromatogram,
     which documents the options for users.
     """
-    idx = abs(run.wl - wavelength).argmin()
-    chosen_wl = run.wl[idx]
+    idx = abs(run.wavelength - wavelength).argmin()
+    chosen_wavelength = run.wavelength[idx]
 
-    if abs(chosen_wl - wavelength) > wl_tolerance:
+    if abs(chosen_wavelength - wavelength) > wavelength_tolerance:
         raise ValueError(
             f"Nearest available wavelength to {wavelength} nm is "
-            f"{chosen_wl} nm, more than {wl_tolerance} nm away."
+            f"{chosen_wavelength} nm, more than {wavelength_tolerance} nm away."
         )
 
     start = 0 if time_min is None else int(np.searchsorted(run.time, time_min, side="left"))
@@ -494,7 +494,7 @@ def extract_chromatogram(
         )
 
     return Chromatogram(
-        wavelength=float(chosen_wl),
+        wavelength=float(chosen_wavelength),
         time=run.time[start:stop].copy(),
         intensity=run.intensity[start:stop, idx].copy(),
         meta=run.meta,

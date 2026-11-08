@@ -183,7 +183,7 @@ def read_cmbx(path, progress=None):
             runs.append(
                 RawRun(
                     time=time,
-                    wl=wavelength,
+                    wavelength=wavelength,
                     intensity=intensity,
                     meta=meta,
                     time_unit="min",

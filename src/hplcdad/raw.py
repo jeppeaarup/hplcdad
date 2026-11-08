@@ -22,7 +22,7 @@ class RawRun:
     """
 
     time: np.ndarray
-    wl: np.ndarray
+    wavelength: np.ndarray
     intensity: np.ndarray
     meta: DADMeta
     time_unit: str
