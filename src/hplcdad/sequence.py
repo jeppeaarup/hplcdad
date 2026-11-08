@@ -11,6 +11,7 @@ import pandas as pd
 
 from .meta import DADMeta
 from .readers import read_cmbx
+from .readers.chromeleon_cmbx import count_cmbx_fields
 from .run import DADRun
 from .traces import ChromatogramSet, SpectrumSet, align_traces, same_axis
 
@@ -53,8 +54,9 @@ class DADSequence:
         pattern: str = "*.txt",
         sort_by: str | Callable[[DADRun], Any] | None = "injection_datetime",
         time_unit: str = "min",
-        signal_unit: str = "mAU",
+        intensity_unit: str = "mAU",
         max_metadata_lines: int = 100,
+        progress: Callable[[int, int], None] | None = None,
     ) -> "DADSequence":
         """Read several Chromeleon 3D field exports into one DADSequence.
 
@@ -68,8 +70,11 @@ class DADSequence:
         sort_by : str, callable, or None, default "injection_datetime"
             How to order the runs (see ``sort_by``). None keeps the order of
             the files (alphabetical for a folder).
-        time_unit, signal_unit, max_metadata_lines
+        time_unit, intensity_unit, max_metadata_lines
             Passed on to ``DADRun.from_chromeleon`` for every file.
+        progress : callable, optional
+            Called as ``progress(done, total)`` before the first file and
+            after each file is read, e.g. to drive a progress bar.
 
         Raises
         ------
@@ -83,19 +88,22 @@ class DADSequence:
         >>> seq = DADSequence.from_chromeleon("data/2026-10-19")
         >>> seq = DADSequence.from_chromeleon("data", pattern="Brew*.txt")
         """
+        paths = _resolve_paths(source, pattern)
         runs = []
-        for path in _resolve_paths(source, pattern):
+        _report(progress, 0, len(paths))
+        for i, path in enumerate(paths, start=1):
             try:
                 runs.append(
                     DADRun.from_chromeleon(
                         path,
                         time_unit=time_unit,
-                        signal_unit=signal_unit,
+                        intensity_unit=intensity_unit,
                         max_metadata_lines=max_metadata_lines,
                     )
                 )
             except ValueError as e:
                 raise ValueError(f"Could not load {str(path)!r}: {e}") from e
+            _report(progress, i, len(paths))
 
         sequence = cls(runs)
         return sequence.sort_by(sort_by) if sort_by is not None else sequence
@@ -107,6 +115,7 @@ class DADSequence:
         *,
         pattern: str = "*.cmbx",
         sort_by: str | Callable[[DADRun], Any] | None = "injection_datetime",
+        progress: Callable[[int, int], None] | None = None,
     ) -> "DADSequence":
         """Read the 3D fields straight from Chromeleon backup archives (.cmbx).
 
@@ -131,6 +140,9 @@ class DADSequence:
         sort_by : str, callable, or None, default "injection_datetime"
             How to order the runs (see ``sort_by``). None keeps the order of
             the archives and, within each, the sequence order.
+        progress : callable, optional
+            Called as ``progress(done, total)`` while reading, where ``total``
+            is the number of 3D fields in all archives together.
 
         Raises
         ------
@@ -152,12 +164,30 @@ class DADSequence:
         >>> seq = DADSequence.from_cmbx("data/20261021 - Spike experiment.cmbx")
         >>> seq = DADSequence.from_cmbx("data/backups")
         """
+        paths = _resolve_paths(source, pattern)
+        counts = [0] * len(paths)
+        if progress is not None:   # count the 3D fields first, for a total
+            for i, path in enumerate(paths):
+                try:
+                    counts[i] = count_cmbx_fields(path)
+                except ValueError as e:
+                    raise ValueError(f"Could not load {str(path)!r}: {e}") from e
+        total = sum(counts)
+        _report(progress, 0, total)
+
         runs = []
-        for path in _resolve_paths(source, pattern):
+        done = 0
+        for path, count in zip(paths, counts):
+            def archive_progress(n, _count, start=done):
+                _report(progress, start + n, total)
             try:
-                runs.extend(DADRun.from_raw(raw) for raw in read_cmbx(path))
+                runs.extend(
+                    DADRun.from_raw(raw)
+                    for raw in read_cmbx(path, progress=archive_progress if progress else None)
+                )
             except ValueError as e:
                 raise ValueError(f"Could not load {str(path)!r}: {e}") from e
+            done += count
 
         sequence = cls(runs)
         return sequence.sort_by(sort_by) if sort_by is not None else sequence
@@ -169,6 +199,7 @@ class DADSequence:
         *,
         pattern: str = "*.h5",
         sort_by: str | Callable[[DADRun], Any] | None = "injection_datetime",
+        progress: Callable[[int, int], None] | None = None,
     ) -> "DADSequence":
         """Read runs saved with ``to_hdf5``.
 
@@ -181,17 +212,23 @@ class DADSequence:
             Glob pattern used when ``source`` is a folder.
         sort_by : str, callable, or None, default "injection_datetime"
             How to order the runs (see ``sort_by``).
+        progress : callable, optional
+            Called as ``progress(done, total)`` before the first file and
+            after each file is read.
 
         Examples
         --------
         >>> seq = DADSequence.from_hdf5("converted")
         """
+        paths = _resolve_paths(source, pattern)
         runs = []
-        for path in _resolve_paths(source, pattern):
+        _report(progress, 0, len(paths))
+        for i, path in enumerate(paths, start=1):
             try:
                 runs.append(DADRun.from_hdf5(path))
             except ValueError as e:
                 raise ValueError(f"Could not load {str(path)!r}: {e}") from e
+            _report(progress, i, len(paths))
 
         sequence = cls(runs)
         return sequence.sort_by(sort_by) if sort_by is not None else sequence
@@ -202,6 +239,7 @@ class DADSequence:
         *,
         overwrite: bool = False,
         compression_level: int = 4,
+        progress: Callable[[int, int], None] | None = None,
     ) -> list[Path]:
         """Save every run as its own HDF5 file in ``folder`` and return the paths.
 
@@ -209,7 +247,8 @@ class DADSequence:
         the Chromeleon injection id is added (``OPTI_01 (836.smp).h5``), or
         the injection number if there is no id. Characters that Windows does
         not allow in file names are replaced with "_". The folder is created
-        if needed.
+        if needed. ``progress``, if given, is called as ``progress(done, total)``
+        before the first file and after each file is written.
 
         Raises
         ------
@@ -223,18 +262,26 @@ class DADSequence:
         >>> seq.to_hdf5("converted/20261021 - Spike experiment")
         """
         paths = self._file_paths(folder, ".h5", overwrite)
-        for run, path in zip(self._runs, paths):
+        _report(progress, 0, len(paths))
+        for i, (run, path) in enumerate(zip(self._runs, paths), start=1):
             run.to_hdf5(path, overwrite=overwrite, compression_level=compression_level)
+            _report(progress, i, len(paths))
         return paths
 
     def to_chromeleon(
-        self, folder, *, overwrite: bool = False, timezone: str = "Europe/Copenhagen"
+        self,
+        folder,
+        *,
+        overwrite: bool = False,
+        timezone: str = "Europe/Copenhagen",
+        progress: Callable[[int, int], None] | None = None,
     ) -> list[Path]:
         """Save every run as a Chromeleon 3D field text export in ``folder``.
 
         Files are named like ``to_hdf5`` names them, with ``.txt``
         (``BLANK-01.txt``; ``OPTI_01 (836.smp).txt`` when names repeat).
-        See ``DADRun.to_chromeleon`` for what is written and for ``timezone``.
+        See ``DADRun.to_chromeleon`` for what is written and for ``timezone``,
+        and ``to_hdf5`` for ``progress``.
 
         Raises
         ------
@@ -248,8 +295,10 @@ class DADSequence:
         >>> seq.to_chromeleon("exports/20261021 - Spike experiment")
         """
         paths = self._file_paths(folder, ".txt", overwrite)
-        for run, path in zip(self._runs, paths):
+        _report(progress, 0, len(paths))
+        for i, (run, path) in enumerate(zip(self._runs, paths), start=1):
             run.to_chromeleon(path, overwrite=overwrite, timezone=timezone)
+            _report(progress, i, len(paths))
         return paths
 
     def _file_paths(self, folder, suffix: str, overwrite: bool) -> list[Path]:
@@ -369,16 +418,16 @@ class DADSequence:
         >>> qcs = seq[table["sample_name"].str.startswith("QC")]
         """
         columns = list(META_FIELDS) + [
-            "n_time", "n_wl", "rt_start", "rt_end", "wl_start", "wl_end",
+            "n_time", "n_wl", "time_start", "time_end", "wl_start", "wl_end",
         ]
         rows = []
         for run in self._runs:
             row = asdict(run.meta)
             row.update(
-                n_time=len(run.rt),
+                n_time=len(run.time),
                 n_wl=len(run.wl),
-                rt_start=float(run.rt[0]),
-                rt_end=float(run.rt[-1]),
+                time_start=float(run.time[0]),
+                time_end=float(run.time[-1]),
                 wl_start=float(run.wl[0]),
                 wl_end=float(run.wl[-1]),
             )
@@ -431,7 +480,7 @@ class DADSequence:
         --------
         >>> seq.filter(match=r"^Brew")
         >>> seq.filter(sample_name="QC")
-        >>> seq.filter(lambda run: run.rt[-1] > 30)
+        >>> seq.filter(lambda run: run.time[-1] > 30)
         """
         for name in meta_fields:
             _check_meta_field(name)
@@ -477,14 +526,14 @@ class DADSequence:
     def crop(
         self,
         *,
-        rt_min: float | None = None,
-        rt_max: float | None = None,
+        time_min: float | None = None,
+        time_max: float | None = None,
         wl_min: float | None = None,
         wl_max: float | None = None,
     ) -> "DADSequence":
         """Crop every run (see ``DADRun.crop``) and return a new DADSequence."""
         return DADSequence(
-            run.crop(rt_min=rt_min, rt_max=rt_max, wl_min=wl_min, wl_max=wl_max)
+            run.crop(time_min=time_min, time_max=time_max, wl_min=wl_min, wl_max=wl_max)
             for run in self._runs
         )
 
@@ -493,8 +542,8 @@ class DADSequence:
         wavelength: float,
         wl_tolerance: float = 1.0,
         *,
-        rt_min: float | None = None,
-        rt_max: float | None = None,
+        time_min: float | None = None,
+        time_max: float | None = None,
     ) -> ChromatogramSet:
         """Return the chromatogram of every run (see ``DADRun.get_chromatogram``).
 
@@ -504,11 +553,11 @@ class DADSequence:
 
         Examples
         --------
-        >>> rt, X = seq.get_chromatogram(314, rt_min=5, rt_max=40).to_numpy()
-        >>> df = seq.get_chromatogram(314).to_pandas(rt_grid="overlap")
+        >>> time, X = seq.get_chromatogram(314, time_min=5, time_max=40).to_numpy()
+        >>> df = seq.get_chromatogram(314).to_pandas(time_grid="overlap")
         """
         return ChromatogramSet(
-            (run.get_chromatogram(wavelength, wl_tolerance, rt_min=rt_min, rt_max=rt_max)
+            (run.get_chromatogram(wavelength, wl_tolerance, time_min=time_min, time_max=time_max)
              for run in self._runs),
             run_index=range(len(self)),
         )
@@ -542,8 +591,8 @@ class DADSequence:
     def stack(
         self,
         *,
-        rt_grid=None,
-        rt_atol: float = 1e-6,
+        time_grid=None,
+        time_atol: float = 1e-6,
         wl_atol: float = 1e-6,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return all runs as one runs x time x wavelength array.
@@ -554,46 +603,46 @@ class DADSequence:
 
         Parameters
         ----------
-        rt_grid : None, "overlap", or array, default None
+        time_grid : None, "overlap", or array, default None
             None requires all runs to share the same time axis.
             "overlap" interpolates onto the first run's time points inside
             the time range covered by every run. An array interpolates onto
             those times (min), which must lie inside every run.
-        rt_atol, wl_atol : float
+        time_atol, wl_atol : float
             Tolerances (min, nm) when checking that axes are the same.
 
         Returns
         -------
-        rt : ndarray, shape (n_time,)
+        time : ndarray, shape (n_time,)
         wl : ndarray, shape (n_wl,)
         X : ndarray, shape (n_runs, n_time, n_wl), in mAU
 
         Examples
         --------
-        >>> rt, wl, X = seq.crop(rt_min=5, rt_max=40, wl_min=220, wl_max=400).stack()
+        >>> time, wl, X = seq.crop(time_min=5, time_max=40, wl_min=220, wl_max=400).stack()
         >>> X_unfolded = X.reshape(len(X), -1)   # runs x (time*wavelength)
         """
         self._require_runs()
         wl = self._common_wl(wl_atol)
         labels = [f"Run {i} ({name!r})" for i, name in enumerate(self.names)]
-        rt, X = align_traces(
-            [run.rt for run in self._runs],
-            [run.signal for run in self._runs],
-            rt_grid,
-            rt_atol,
-            name="rt",
+        time, X = align_traces(
+            [run.time for run in self._runs],
+            [run.intensity for run in self._runs],
+            time_grid,
+            time_atol,
+            name="time",
             unit="min",
             labels=labels,
         )
-        return rt, wl.copy(), X
+        return time, wl.copy(), X
 
-    def has_common_axes(self, rt_atol: float = 1e-6, wl_atol: float = 1e-6) -> bool:
+    def has_common_axes(self, time_atol: float = 1e-6, wl_atol: float = 1e-6) -> bool:
         """True if every run has the same time and wavelength axes."""
         if len(self) == 0:
             return True
         ref = self._runs[0]
         return all(
-            same_axis(run.rt, ref.rt, rt_atol) and same_axis(run.wl, ref.wl, wl_atol)
+            same_axis(run.time, ref.time, time_atol) and same_axis(run.wl, ref.wl, wl_atol)
             for run in self._runs[1:]
         )
 
@@ -619,6 +668,11 @@ class DADSequence:
 def _check_meta_field(name: str):
     if name not in META_FIELDS:
         raise ValueError(f"Unknown metadata field {name!r}. Known fields: {list(META_FIELDS)}.")
+
+
+def _report(progress, done: int, total: int) -> None:
+    if progress is not None:
+        progress(done, total)
 
 
 def _safe_file_name(name: str) -> str:

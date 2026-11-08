@@ -11,18 +11,18 @@ META = DADMeta(sample_name="synthetic", sequence="tests", injection_datetime=dat
 
 def synthetic_chromatogram(seed=0):
     """Three Gaussian peaks on a curved baseline, with noise, at 2.5 Hz over 36 min."""
-    rt = np.linspace(0, 36, 5401)
-    baseline = 5 + 0.3 * rt + 2 * np.sin(rt / 12)
+    time = np.linspace(0, 36, 5401)
+    baseline = 5 + 0.3 * time + 2 * np.sin(time / 12)
     peaks = sum(
-        height * np.exp(-0.5 * ((rt - centre) / width) ** 2)
+        height * np.exp(-0.5 * ((time - centre) / width) ** 2)
         for height, centre, width in [(100, 8, 0.08), (60, 15, 0.10), (150, 22, 0.12)]
     )
-    noise = np.random.default_rng(seed).normal(0, 0.05, rt.size)
-    return rt, baseline, baseline + peaks + noise
+    noise = np.random.default_rng(seed).normal(0, 0.05, time.size)
+    return time, baseline, baseline + peaks + noise
 
 
 def test_asls_recovers_known_baseline():
-    rt, baseline, y = synthetic_chromatogram()
+    time, baseline, y = synthetic_chromatogram()
     estimate = asls_baseline(y, lam=1e7, p=0.01)
     assert np.abs(estimate - baseline).max() < 0.01 * 150   # within 1% of the tallest peak
 
@@ -60,21 +60,21 @@ def test_savgol_rejects_even_window():
 
 
 def test_chromatogram_methods_return_new_objects_with_history():
-    rt, _, y = synthetic_chromatogram()
-    original = Chromatogram(wavelength=270.0, rt=rt, signal=y, meta=META)
+    time, _, y = synthetic_chromatogram()
+    original = Chromatogram(wavelength=270.0, time=time, intensity=y, meta=META)
     processed = original.correct_baseline(lam=1e7).savgol(11)
 
     assert processed is not original
-    assert np.array_equal(original.signal, y)
+    assert np.array_equal(original.intensity, y)
     assert original.processing == ()
     assert len(processed.processing) == 2
     assert processed.processing[0].startswith("asls baseline correction")
 
 
 def test_sets_apply_to_every_trace():
-    rt, _, y = synthetic_chromatogram()
+    time, _, y = synthetic_chromatogram()
     chromatograms = ChromatogramSet(
-        [Chromatogram(wavelength=270.0, rt=rt, signal=y, meta=META)] * 3, run_index=[4, 5, 6]
+        [Chromatogram(wavelength=270.0, time=time, intensity=y, meta=META)] * 3, run_index=[4, 5, 6]
     )
     corrected = chromatograms.correct_baseline(lam=1e7)
     assert len(corrected) == 3
@@ -83,7 +83,7 @@ def test_sets_apply_to_every_trace():
 
 def test_spectrum_savgol():
     wl = np.arange(190.0, 642.0, 2.0)
-    spectrum = Spectrum(time=10.0, wl=wl, signal=np.exp(-((wl - 270) / 20) ** 2), meta=META)
+    spectrum = Spectrum(time=10.0, wl=wl, intensity=np.exp(-((wl - 270) / 20) ** 2), meta=META)
     smooth = spectrum.savgol(5)
-    assert smooth.signal.shape == wl.shape
+    assert smooth.intensity.shape == wl.shape
     assert "5 points" in smooth.processing[0]

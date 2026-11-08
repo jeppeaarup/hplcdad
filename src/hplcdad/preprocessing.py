@@ -16,13 +16,13 @@ def asls_baseline(y, *, lam=1e6, p=1e-2, n_iter=50):
         sum(w * (y - z)**2) + lam * sum(diff(z, 2)**2)
 
     where points above the curve get weight p and points below it 1 - p.
-    With a small p the curve follows the lower edge of the signal, so peaks
+    With a small p the curve follows the lower edge of the intensity, so peaks
     are left out of the baseline.
 
     Parameters
     ----------
     y : 1-D array
-        The signal.
+        The intensity.
     lam : float, default 1e6
         Smoothness; larger gives a stiffer baseline. Typical values are
         1e4 to 1e9. The right value depends on the number of points, so
@@ -41,7 +41,7 @@ def asls_baseline(y, *, lam=1e6, p=1e-2, n_iter=50):
     """
     y = np.asarray(y, dtype=float)
     if y.ndim != 1:
-        raise ValueError(f"Signal must be 1-dimensional, got shape {y.shape}.")
+        raise ValueError(f"Intensity must be 1-dimensional, got shape {y.shape}.")
     if len(y) < 3:
         raise ValueError(f"Need at least 3 points for a baseline, got {len(y)}.")
     if not 0 < p < 1:
@@ -61,7 +61,7 @@ def savgol_smooth(y, x, window_length, *, polyorder=2, deriv=0, mode="interp", u
     Parameters
     ----------
     y : 1-D array
-        The signal.
+        The intensity.
     x : 1-D array
         Its axis (time in min or wavelength in nm). Must be evenly spaced;
         the spacing is used to scale derivatives.
@@ -79,12 +79,12 @@ def savgol_smooth(y, x, window_length, *, polyorder=2, deriv=0, mode="interp", u
     Returns
     -------
     1-D array
-        The filtered signal.
+        The filtered intensity.
     """
     y = np.asarray(y, dtype=float)
     x = np.asarray(x, dtype=float)
     if y.ndim != 1 or y.shape != x.shape:
-        raise ValueError(f"Signal {y.shape} and axis {x.shape} must be 1-D and the same length.")
+        raise ValueError(f"Intensity {y.shape} and axis {x.shape} must be 1-D and the same length.")
     if len(x) < 2:
         raise ValueError("Need at least 2 points.")
 

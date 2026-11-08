@@ -2,7 +2,7 @@
 
 Load and work with HPLC-DAD (diode array detector) data in Python.
 
-`hplcdad` reads vendor files into a single, clean data structure: a signal matrix with a time axis, a wavelength axis, and run metadata. Whichever instrument or format a file came from, the rest of your analysis code sees the same layout and units. Runs can be saved as HDF5 files, a common open format that keeps data and metadata together.
+`hplcdad` reads vendor files into a single, clean data structure: an intensity matrix with a time axis, a wavelength axis, and run metadata. Whichever instrument or format a file came from, the rest of your analysis code sees the same layout and units. Runs can be saved as HDF5 files, a common open format that keeps data and metadata together.
 
 ## Supported formats
 
@@ -16,7 +16,7 @@ More formats can be added; see [Adding a new format](#adding-a-new-format).
 
 ## Installation
 
-Requires Python 3.10 or newer, NumPy and pandas. Reading and writing HDF5 files also needs h5py.
+Requires Python 3.11 or newer, NumPy and pandas. Reading and writing HDF5 files also needs h5py.
 
 ```bash
 git clone https://github.com/<your-username>/hplcdad.git
@@ -26,6 +26,20 @@ pip install -e ".[hdf5]"
 
 The `-e` flag installs the package in editable mode, so changes to the source take effect without reinstalling. Leave out `[hdf5]` if you don't need HDF5 files; use `[hdf5,dev]` to also install the testing tools.
 
+## Converting files without writing code
+
+For plain conversions there is a small window:
+
+```bash
+hplcdad-gui
+```
+
+(or `python -m hplcdad.gui`). Choose a file or a folder, the output format (HDF5 or Chromeleon text export) and an output folder, then press **Convert**. The input format is detected from the file extensions, and can be chosen by hand. A progress bar follows the reading and the writing of each run. If output files already exist, the window asks before replacing them. Cancel stops after the current file; files already written are kept.
+
+`hplcdad-gui` is installed into the environment's `Scripts` folder by `pip install`; on Windows you can pin `hplcdad-gui.exe` from there to the Start menu or taskbar.
+
+In scripts, the same progress is available through the `progress` argument of `DADSequence.from_chromeleon`, `from_cmbx`, `from_hdf5`, `to_hdf5` and `to_chromeleon`: a function called as `progress(done, total)`.
+
 ## Quick start
 
 ```python
@@ -34,7 +48,7 @@ from hplcdad import DADRun, DADSequence
 run = DADRun.from_chromeleon("path/to/export.txt")
 
 print(run.meta.sample_name, run.meta.injection_datetime)
-print(run.signal.shape)   # (number of time points, number of wavelengths)
+print(run.intensity.shape)   # (number of time points, number of wavelengths)
 
 chromatogram = run.get_chromatogram(254)   # nearest wavelength to 254 nm
 spectrum = run.get_spectrum(2.0)           # nearest time point to 2.0 min
@@ -54,12 +68,12 @@ seq = DADSequence.from_hdf5("converted/")
 
 | Attribute | Description |
 |---|---|
-| `rt` | Time axis, 1D array, in minutes |
+| `time` | Time axis, 1D array, in minutes |
 | `wl` | Wavelength axis, 1D array, in nm |
-| `signal` | Intensity matrix, shape `(len(rt), len(wl))` (time × wavelength), in mAU |
+| `intensity` | Intensity matrix, shape `(len(time), len(wl))` (time × wavelength), in mAU |
 | `meta` | A `DADMeta` object (see below) |
 
-Every `DADRun` is guaranteed to have these units and this layout, however it was created. The constructor raises a `ValueError` if the signal shape does not match the axes.
+Every `DADRun` is guaranteed to have these units and this layout, however it was created. The constructor raises a `ValueError` if the intensity shape does not match the axes.
 
 `DADSequence` is an ordered, read-only collection of runs. It can be indexed by position or sample name, filtered and sorted on metadata, and stacked into one array for multivariate analysis.
 
@@ -99,9 +113,9 @@ Fields the file does not provide are `None`.
 
 | Path | Content |
 |---|---|
-| `/rt` | Time axis, float64, `units="min"` |
+| `/time` | Time axis, float64, `units="min"` |
 | `/wl` | Wavelength axis, float64, `units="nm"` |
-| `/signal` | Signal, `(rt, wl)`, float64, `units="mAU"`, gzip-compressed |
+| `/intensity` | Intensity, `(time, wl)`, float64, `units="mAU"`, gzip-compressed |
 | root attributes | All `DADMeta` fields that are not `None`, plus `hplcdad_schema_version`, `created` (UTC) and `source_sha256` (checksum of the source file, when it still exists) |
 
 A run read back with `from_hdf5` is identical to the one written. The checksum ties each file to the raw data it came from. The files use HDF5 dimension scales, so they also open in xarray with labelled axes:
@@ -145,13 +159,13 @@ Readers must label their data with one of these units:
 | Quantity | Units |
 |---|---|
 | Time | `min`, `s`, `h` |
-| Signal | `mAU`, `AU` |
+| Intensity | `mAU`, `AU` |
 
 An unknown label raises a `ValueError` when the `RawRun` is created. To support a new unit, add it to the tables in `raw.py`.
 
 ## Adding a new format
 
-1. Add a module `readers/<format>.py` with a function `read_<format>(path)` that parses the file and returns a `RawRun` (signal matrix, time axis, wavelength axis, a `DADMeta`, unit labels, and `rt_as_rows` if the orientation is known). If one file holds several runs, return a list of `RawRun`. Then import it in `readers/__init__.py`.
+1. Add a module `readers/<format>.py` with a function `read_<format>(path)` that parses the file and returns a `RawRun` (intensity matrix, time axis, wavelength axis, a `DADMeta`, unit labels, and `time_as_rows` if the orientation is known). If one file holds several runs, return a list of `RawRun`. Then import it in `readers/__init__.py`.
 2. Add a class method that calls your reader and then `DADRun.from_raw(...)`: `DADRun.from_<vendor>(path)` for one run per file, or `DADSequence.from_<vendor>(path)` for several.
 
 The cleanup is shared, so a new reader only has to parse its own format. Once loaded, any run can be saved with `to_hdf5`.
@@ -172,5 +186,6 @@ src/hplcdad/
   traces.py       Chromatogram and Spectrum
   preprocessing.py  AsLS baseline and Savitzky-Golay filter
   meta.py         DADMeta
+  gui.py          converter window (hplcdad-gui)
 tests/
 ```

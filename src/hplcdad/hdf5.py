@@ -3,14 +3,14 @@
 One file per run, laid out with HDF5 dimension scales so that xarray can open
 it too (xarray.open_dataset(path, engine="h5netcdf")):
 
-    /rt       retention time, float64, attribute units="min"
-    /wl       wavelength,     float64, attribute units="nm"
-    /signal   (rt, wl),       float64, attribute units="mAU", compressed
+    /time        retention time, float64, attribute units="min"
+    /wl          wavelength,     float64, attribute units="nm"
+    /intensity   (time, wl),     float64, attribute units="mAU", compressed
     root attributes: the DADMeta fields (None fields are left out), plus
         hplcdad_schema_version, created (UTC, ISO 8601) and, when the source
         file still exists, source_sha256.
 
-The signal is stored as float64, the same as DADRun holds it, so a run read
+The intensity is stored as float64, the same as DADRun holds it, so a run read
 back is identical to the one written.
 """
 import hashlib
@@ -23,7 +23,7 @@ import numpy as np
 from .meta import DADMeta
 from .raw import RawRun
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2   # 2: datasets renamed rt -> time, signal -> intensity; version 1 files are still read
 META_TYPES = {f.name: f.type for f in fields(DADMeta)}
 INT_FIELDS = {"injection_number"}
 FLOAT_FIELDS = {"injection_volume_ul"}
@@ -57,28 +57,28 @@ def write_hdf5(run, path, *, overwrite=False, compression_level=4):
         raise FileExistsError(f"{str(path)!r} already exists; pass overwrite=True to replace it.")
 
     with h5py.File(path, "w") as file:
-        rt = file.create_dataset("rt", data=run.rt)
-        rt.attrs["units"] = "min"
-        rt.attrs["long_name"] = "retention time"
-        rt.make_scale("rt")
+        time = file.create_dataset("time", data=run.time)
+        time.attrs["units"] = "min"
+        time.attrs["long_name"] = "retention time"
+        time.make_scale("time")
 
         wl = file.create_dataset("wl", data=run.wl)
         wl.attrs["units"] = "nm"
         wl.attrs["long_name"] = "wavelength"
         wl.make_scale("wl")
 
-        signal = file.create_dataset(
-            "signal",
-            data=run.signal,
-            chunks=(min(len(run.rt), 1024), len(run.wl)),
+        intensity = file.create_dataset(
+            "intensity",
+            data=run.intensity,
+            chunks=(min(len(run.time), 1024), len(run.wl)),
             compression="gzip",
             compression_opts=compression_level,
             shuffle=True,
         )
-        signal.attrs["units"] = "mAU"
-        signal.attrs["long_name"] = "absorbance"
-        signal.dims[0].attach_scale(rt)
-        signal.dims[1].attach_scale(wl)
+        intensity.attrs["units"] = "mAU"
+        intensity.attrs["long_name"] = "absorbance"
+        intensity.dims[0].attach_scale(time)
+        intensity.dims[1].attach_scale(wl)
 
         attrs = file.attrs
         attrs["hplcdad_schema_version"] = SCHEMA_VERSION
@@ -108,7 +108,9 @@ def read_hdf5(path):
                 f"{str(path)!r} uses schema version {version}, but this version of "
                 f"hplcdad only reads up to {SCHEMA_VERSION}. Update hplcdad."
             )
-        for name in ("rt", "wl", "signal"):
+        # Schema 1 called the datasets "rt" and "signal".
+        time_name, intensity_name = ("rt", "signal") if int(version) == 1 else ("time", "intensity")
+        for name in (time_name, "wl", intensity_name):
             if name not in file:
                 raise ValueError(f"{str(path)!r} has no {name!r} dataset.")
 
@@ -135,11 +137,11 @@ def read_hdf5(path):
             raise ValueError(f"{str(path)!r} is missing required metadata: {e}") from None
 
         return RawRun(
-            rt=np.array(file["rt"]),
+            time=np.array(file[time_name]),
             wl=np.array(file["wl"]),
-            signal=np.array(file["signal"]),
+            intensity=np.array(file[intensity_name]),
             meta=meta,
-            time_unit=file["rt"].attrs.get("units", "min"),
-            signal_unit=file["signal"].attrs.get("units", "mAU"),
-            rt_as_rows=True,
+            time_unit=file[time_name].attrs.get("units", "min"),
+            intensity_unit=file[intensity_name].attrs.get("units", "mAU"),
+            time_as_rows=True,
         )

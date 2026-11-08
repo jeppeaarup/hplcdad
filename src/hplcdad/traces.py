@@ -12,30 +12,30 @@ from .preprocessing import asls_baseline, savgol_smooth
 
 @dataclass(frozen=True)
 class Spectrum:
-    """A spectrum extracted from a DAD run: signal vs wavelength at one time."""
+    """A spectrum extracted from a DAD run: intensity vs wavelength at one time."""
 
     time: float          # time point used, in min
     wl: np.ndarray       # wavelength axis, in nm
-    signal: np.ndarray   # mAU
+    intensity: np.ndarray   # mAU
     meta: DADMeta
     requested_time: float | None = None   # time asked for, in min
     processing: tuple[str, ...] = ()      # steps applied, in order
 
     def __post_init__(self):
-        if np.shape(self.signal) != np.shape(self.wl):
+        if np.shape(self.intensity) != np.shape(self.wl):
             raise ValueError(
-                f"Signal shape {np.shape(self.signal)} does not match "
+                f"Intensity shape {np.shape(self.intensity)} does not match "
                 f"wavelength axis shape {np.shape(self.wl)}."
             )
 
     def to_numpy(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return (wl, signal) as copies."""
-        return self.wl.copy(), self.signal.copy()
+        """Return (wl, intensity) as copies."""
+        return self.wl.copy(), self.intensity.copy()
 
     def to_pandas(self) -> pd.Series:
-        """Return the signal as a Series indexed by wavelength (nm)."""
+        """Return the intensity as a Series indexed by wavelength (nm)."""
         return pd.Series(
-            self.signal.copy(),
+            self.intensity.copy(),
             index=pd.Index(self.wl.copy(), name="wl_nm"),
             name=self.meta.sample_name,
         )
@@ -58,40 +58,40 @@ class Spectrum:
         >>> smooth = spectrum.savgol(5)
         >>> first_derivative = spectrum.savgol(5, deriv=1)
         """
-        signal = savgol_smooth(
-            self.signal, self.wl, window_length, polyorder=polyorder, deriv=deriv, unit="nm"
+        intensity = savgol_smooth(
+            self.intensity, self.wl, window_length, polyorder=polyorder, deriv=deriv, unit="nm"
         )
         step = f"savgol (window_length={window_length} points, polyorder={polyorder}, deriv={deriv})"
-        return replace(self, signal=signal, processing=self.processing + (step,))
+        return replace(self, intensity=intensity, processing=self.processing + (step,))
 
 
 @dataclass(frozen=True)
 class Chromatogram:
-    """A chromatogram extracted from a DAD run: signal vs time at one wavelength."""
+    """A chromatogram extracted from a DAD run: intensity vs time at one wavelength."""
 
     wavelength: float    # wavelength used, in nm
-    rt: np.ndarray       # time axis, in min
-    signal: np.ndarray   # mAU
+    time: np.ndarray       # time axis, in min
+    intensity: np.ndarray   # mAU
     meta: DADMeta
     requested_wavelength: float | None = None   # wavelength asked for, in nm
     processing: tuple[str, ...] = ()            # steps applied, in order
 
     def __post_init__(self):
-        if np.shape(self.signal) != np.shape(self.rt):
+        if np.shape(self.intensity) != np.shape(self.time):
             raise ValueError(
-                f"Signal shape {np.shape(self.signal)} does not match "
-                f"time axis shape {np.shape(self.rt)}."
+                f"Intensity shape {np.shape(self.intensity)} does not match "
+                f"time axis shape {np.shape(self.time)}."
             )
 
     def to_numpy(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return (rt, signal) as copies."""
-        return self.rt.copy(), self.signal.copy()
+        """Return (time, intensity) as copies."""
+        return self.time.copy(), self.intensity.copy()
 
     def to_pandas(self) -> pd.Series:
-        """Return the signal as a Series indexed by time (min)."""
+        """Return the intensity as a Series indexed by time (min)."""
         return pd.Series(
-            self.signal.copy(),
-            index=pd.Index(self.rt.copy(), name="rt_min"),
+            self.intensity.copy(),
+            index=pd.Index(self.time.copy(), name="time_min"),
             name=self.meta.sample_name,
         )
 
@@ -107,16 +107,16 @@ class Chromatogram:
         --------
         >>> baseline = chromatogram.estimate_baseline(lam=1e7)
         """
-        baseline = asls_baseline(self.signal, lam=lam, p=p, n_iter=n_iter)
+        baseline = asls_baseline(self.intensity, lam=lam, p=p, n_iter=n_iter)
         step = f"asls baseline estimate (lam={lam:g}, p={p:g})"
-        return replace(self, signal=baseline, processing=self.processing + (step,))
+        return replace(self, intensity=baseline, processing=self.processing + (step,))
 
     def correct_baseline(
         self, *, lam: float = 1e6, p: float = 0.01, n_iter: int = 10
     ) -> "Chromatogram":
         """Return a new Chromatogram with the baseline removed (asymmetric least squares).
 
-        Fits a smooth curve along the lower edge of the signal, leaving out
+        Fits a smooth curve along the lower edge of the intensity, leaving out
         the peaks, and subtracts it (Eilers & Boelens, 2005).
 
         Parameters
@@ -134,9 +134,9 @@ class Chromatogram:
         --------
         >>> corrected = chromatogram.correct_baseline(lam=1e7, p=0.01)
         """
-        baseline = asls_baseline(self.signal, lam=lam, p=p, n_iter=n_iter)
+        baseline = asls_baseline(self.intensity, lam=lam, p=p, n_iter=n_iter)
         step = f"asls baseline correction (lam={lam:g}, p={p:g})"
-        return replace(self, signal=self.signal - baseline, processing=self.processing + (step,))
+        return replace(self, intensity=self.intensity - baseline, processing=self.processing + (step,))
 
     def savgol(self, window_length: int, *, polyorder: int = 2, deriv: int = 0) -> "Chromatogram":
         """Return a new Chromatogram smoothed with a Savitzky-Golay filter along time.
@@ -156,11 +156,11 @@ class Chromatogram:
         --------
         >>> smooth = chromatogram.savgol(11)
         """
-        signal = savgol_smooth(
-            self.signal, self.rt, window_length, polyorder=polyorder, deriv=deriv, unit="min"
+        intensity = savgol_smooth(
+            self.intensity, self.time, window_length, polyorder=polyorder, deriv=deriv, unit="min"
         )
         step = f"savgol (window_length={window_length} points, polyorder={polyorder}, deriv={deriv})"
-        return replace(self, signal=signal, processing=self.processing + (step,))
+        return replace(self, intensity=intensity, processing=self.processing + (step,))
 
 
 class _TraceSet:
@@ -170,7 +170,7 @@ class _TraceSet:
     DADSequence it came from, so labels survive slicing.
     """
 
-    _axis = ""        # "rt" or "wl": attribute name of the x axis
+    _axis = ""        # "time" or "wl": attribute name of the x axis
     _axis_label = ""  # column index name in to_pandas()
     _unit = ""
 
@@ -230,7 +230,7 @@ class _TraceSet:
         labels = [f"Run {i} ({name!r})" for i, name in zip(self._run_index, self.names)]
         return align_traces(
             [getattr(t, self._axis) for t in self._traces],
-            [t.signal for t in self._traces],
+            [t.intensity for t in self._traces],
             grid,
             atol,
             name=self._axis,
@@ -253,8 +253,8 @@ class ChromatogramSet(_TraceSet):
     by (run, sample_name).
     """
 
-    _axis = "rt"
-    _axis_label = "rt_min"
+    _axis = "time"
+    _axis_label = "time_min"
     _unit = "min"
 
     def _check_wavelength(self):
@@ -282,34 +282,34 @@ class ChromatogramSet(_TraceSet):
         """Smooth every chromatogram; see ``Chromatogram.savgol`` (window in points)."""
         return self._apply("savgol", window_length, polyorder=polyorder, deriv=deriv)
 
-    def to_numpy(self, *, rt_grid=None, rt_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
-        """Return (rt, X) with X of shape (n_runs, n_time), in mAU.
+    def to_numpy(self, *, time_grid=None, time_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
+        """Return (time, X) with X of shape (n_runs, n_time), in mAU.
 
         Parameters
         ----------
-        rt_grid : None, "overlap", or array, default None
+        time_grid : None, "overlap", or array, default None
             None requires every chromatogram to have the same time axis.
             "overlap" interpolates onto the first run's time points inside the
             range covered by every run. An array interpolates onto those
             times (min), which must lie inside every run.
-        rt_atol : float, default 1e-6
+        time_atol : float, default 1e-6
             Tolerance in minutes when checking that the time axes match.
         """
         self._check_wavelength()
-        return self._to_numpy(rt_grid, rt_atol)
+        return self._to_numpy(time_grid, time_atol)
 
-    def to_pandas(self, *, rt_grid=None, rt_atol: float = 1e-6) -> pd.DataFrame:
+    def to_pandas(self, *, time_grid=None, time_atol: float = 1e-6) -> pd.DataFrame:
         """Return a DataFrame with one row per run and one column per time (min).
 
         Rows are indexed by (run, sample_name); see ``to_numpy`` for options.
 
         Examples
         --------
-        >>> df = seq.get_chromatogram(314, rt_min=5, rt_max=40).to_pandas()
+        >>> df = seq.get_chromatogram(314, time_min=5, time_max=40).to_pandas()
         >>> df.xs("QC", level="sample_name")
         """
         self._check_wavelength()
-        return self._to_pandas(rt_grid, rt_atol)
+        return self._to_pandas(time_grid, time_atol)
 
 
 class SpectrumSet(_TraceSet):
@@ -331,7 +331,7 @@ class SpectrumSet(_TraceSet):
     def to_numpy(self, *, wl_grid=None, wl_atol: float = 1e-6) -> tuple[np.ndarray, np.ndarray]:
         """Return (wl, X) with X of shape (n_runs, n_wl), in mAU.
 
-        wl_grid works like ``rt_grid`` in ``ChromatogramSet.to_numpy``.
+        wl_grid works like ``time_grid`` in ``ChromatogramSet.to_numpy``.
         """
         return self._to_numpy(wl_grid, wl_atol)
 
@@ -350,24 +350,24 @@ def same_axis(a: np.ndarray, b: np.ndarray, atol: float) -> bool:
     return len(a) == len(b) and bool(np.allclose(a, b, rtol=0, atol=atol))
 
 
-def interp_onto(grid: np.ndarray, axis: np.ndarray, signal: np.ndarray, unit: str = "") -> np.ndarray:
-    """Linearly interpolate a 1-D signal, or a 2-D one along its first axis."""
+def interp_onto(grid: np.ndarray, axis: np.ndarray, intensity: np.ndarray, unit: str = "") -> np.ndarray:
+    """Linearly interpolate a 1-D intensity, or a 2-D one along its first axis."""
     eps = 1e-9
     if grid[0] < axis[0] - eps or grid[-1] > axis[-1] + eps:
         raise ValueError(
             f"Grid ({grid[0]:g}-{grid[-1]:g} {unit}) reaches outside a run "
             f"({axis[0]:g}-{axis[-1]:g} {unit}); extrapolation is not allowed."
         )
-    if signal.ndim == 1:
-        return np.interp(grid, axis, signal)
+    if intensity.ndim == 1:
+        return np.interp(grid, axis, intensity)
     return np.column_stack(
-        [np.interp(grid, axis, signal[:, j]) for j in range(signal.shape[1])]
+        [np.interp(grid, axis, intensity[:, j]) for j in range(intensity.shape[1])]
     )
 
 
 def align_traces(
     axes: list[np.ndarray],
-    signals: list[np.ndarray],
+    intensities: list[np.ndarray],
     grid,
     atol: float,
     *,
@@ -375,7 +375,7 @@ def align_traces(
     unit: str,
     labels: list[str],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Put signals with (possibly) different axes onto one axis and stack them.
+    """Put intensities with (possibly) different axes onto one axis and stack them.
 
     grid: None (axes must already match), "overlap", or an array.
     Returns (axis, stacked_signals).
@@ -394,7 +394,7 @@ def align_traces(
                     f"{len(ref)} points). Pass {name}_grid='overlap' or an array to "
                     f"interpolate onto a common grid."
                 )
-        return np.asarray(ref).copy(), np.stack(signals)
+        return np.asarray(ref).copy(), np.stack(intensities)
 
     if isinstance(grid, str):
         if grid != "overlap":
@@ -414,7 +414,7 @@ def align_traces(
             raise ValueError(f"{name}_grid must be a 1-D, strictly increasing array.")
 
     return new_axis, np.stack(
-        [interp_onto(new_axis, ax, s, unit) for ax, s in zip(axes, signals)]
+        [interp_onto(new_axis, ax, s, unit) for ax, s in zip(axes, intensities)]
     )
 
 
@@ -434,13 +434,13 @@ def extract_spectrum(
     or if the wavelength range contains no points. Used by
     DADRun.get_spectrum, which documents the options for users.
     """
-    idx = abs(run.rt - time).argmin()
-    chosen_rt = run.rt[idx]
+    idx = abs(run.time - time).argmin()
+    chosen_time = run.time[idx]
 
-    if abs(chosen_rt - time) > time_tolerance:
+    if abs(chosen_time - time) > time_tolerance:
         raise ValueError(
             f"Nearest available time to {time} min is "
-            f"{chosen_rt} min, more than {time_tolerance} min away."
+            f"{chosen_time} min, more than {time_tolerance} min away."
         )
 
     start = 0 if wl_min is None else int(np.searchsorted(run.wl, wl_min, side="left"))
@@ -453,9 +453,9 @@ def extract_spectrum(
         )
 
     return Spectrum(
-        time=float(chosen_rt),
+        time=float(chosen_time),
         wl=run.wl[start:stop].copy(),
-        signal=run.signal[idx, start:stop].copy(),
+        intensity=run.intensity[idx, start:stop].copy(),
         meta=run.meta,
         requested_time=time,
     )
@@ -466,8 +466,8 @@ def extract_chromatogram(
     wavelength: float,
     wl_tolerance: float = 1.0,
     *,
-    rt_min: float | None = None,
-    rt_max: float | None = None,
+    time_min: float | None = None,
+    time_max: float | None = None,
 ) -> Chromatogram:
     """Return the chromatogram of `run` at the wavelength nearest to `wavelength` (nm).
 
@@ -484,19 +484,19 @@ def extract_chromatogram(
             f"{chosen_wl} nm, more than {wl_tolerance} nm away."
         )
 
-    start = 0 if rt_min is None else int(np.searchsorted(run.rt, rt_min, side="left"))
-    stop = len(run.rt) if rt_max is None else int(np.searchsorted(run.rt, rt_max, side="right"))
+    start = 0 if time_min is None else int(np.searchsorted(run.time, time_min, side="left"))
+    stop = len(run.time) if time_max is None else int(np.searchsorted(run.time, time_max, side="right"))
 
     if start >= stop:
         raise ValueError(
-            f"Time range ({rt_min}, {rt_max}) min contains no points; "
-            f"the run covers {run.rt[0]} to {run.rt[-1]} min."
+            f"Time range ({time_min}, {time_max}) min contains no points; "
+            f"the run covers {run.time[0]} to {run.time[-1]} min."
         )
 
     return Chromatogram(
         wavelength=float(chosen_wl),
-        rt=run.rt[start:stop].copy(),
-        signal=run.signal[start:stop, idx].copy(),
+        time=run.time[start:stop].copy(),
+        intensity=run.intensity[start:stop, idx].copy(),
         meta=run.meta,
         requested_wavelength=wavelength,
     )

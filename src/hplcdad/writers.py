@@ -98,13 +98,13 @@ def write_chromeleon(run, path, *, overwrite=False, timezone=DEFAULT_TIMEZONE):
         "Weight\t",
         "",
         "Raw Data Information:",
-        f"Time Min. (min)\t{_number(run.rt[0])}",
-        f"Time Max. (min)\t{_number(run.rt[-1])}",
+        f"Time Min. (min)\t{_number(run.time[0])}",
+        f"Time Max. (min)\t{_number(run.time[-1])}",
         f"Scan Min. (nm)\t{_number(run.wl[0])}",
         f"Scan Max. (nm)\t{_number(run.wl[-1])}",
-        f"Signal Min. (mAU)\t{_number(run.signal.min())}",
-        f"Signal Max. (mAU)\t{_number(run.signal.max())}",
-        f"Spectra\t{len(run.rt)}",
+        f"Intensity Min. (mAU)\t{_number(run.intensity.min())}",
+        f"Intensity Max. (mAU)\t{_number(run.intensity.max())}",
+        f"Spectra\t{len(run.time)}",
         "Detector\t",
         "Detector Type\tUV",
         f"Generating Data System\t{generated_by}",
@@ -117,7 +117,7 @@ def write_chromeleon(run, path, *, overwrite=False, timezone=DEFAULT_TIMEZONE):
     ]
 
     number = f"{{:,.{DECIMALS}f}}".format
-    for time, spectrum in zip(run.rt, run.signal):
+    for time, spectrum in zip(run.time, run.intensity):
         lines.append(f"{time:.{DECIMALS}f}\tn.a.\t" + "\t".join(map(number, spectrum)))
 
     path.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8-sig"))

@@ -20,6 +20,9 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/jeppeaarup/hplcdad"
 
+[project.gui-scripts]
+hplcdad-gui = "hplcdad.gui:main"
+
 [project.optional-dependencies]
 hdf5 = ["h5py>=3.16"]
 dev = ["pytest>=9.2", "xarray>=2026.9", "h5netcdf>=1.8"]

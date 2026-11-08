@@ -13,11 +13,11 @@ EXPORTED_FIELDS = (
 
 
 def make_run(name="Brew 1", injection_id="556.smp", number=1, when=datetime(2026, 10, 21, 13, 5, 7)):
-    rt = 0.0002 + np.arange(300) * 0.4 / 60
+    time = 0.0002 + np.arange(300) * 0.4 / 60
     wl = np.arange(190.0, 642.0, 2.0)
-    signal = np.random.default_rng(number).normal(0, 300, (len(rt), len(wl)))
-    signal[0, 0] = -1234.5678901   # thousands separator, negative
-    signal[1, 1] = 2500.25
+    intensity = np.random.default_rng(number).normal(0, 300, (len(time), len(wl)))
+    intensity[0, 0] = -1234.5678901   # thousands separator, negative
+    intensity[1, 1] = 2500.25
     meta = DADMeta(
         sample_name=name,
         sequence="20261021 - Spike experiment",
@@ -28,7 +28,7 @@ def make_run(name="Brew 1", injection_id="556.smp", number=1, when=datetime(2026
         method="20261019 - Beer bitter acids (JAA)",
         injection_id=injection_id,
     )
-    return DADRun(rt, wl, signal, meta)
+    return DADRun(time, wl, intensity, meta)
 
 
 @pytest.mark.parametrize(
@@ -40,8 +40,8 @@ def test_round_trip(tmp_path, when):
     run = make_run(when=when)
     back = DADRun.from_chromeleon(run.to_chromeleon(tmp_path / "run.txt"))
 
-    assert np.abs(back.signal - run.signal).max() <= 5e-7 + 1e-9   # 6-decimal rounding
-    assert np.abs(back.rt - run.rt).max() <= 5e-7 + 1e-9
+    assert np.abs(back.intensity - run.intensity).max() <= 5e-7 + 1e-9   # 6-decimal rounding
+    assert np.abs(back.time - run.time).max() <= 5e-7 + 1e-9
     assert np.array_equal(back.wl, run.wl)
     for field in EXPORTED_FIELDS:
         assert getattr(back.meta, field) == getattr(run.meta, field), field
@@ -60,7 +60,7 @@ def test_layout_matches_chromeleon(tmp_path):
 
 def test_missing_metadata_is_left_empty(tmp_path):
     run = make_run()
-    bare = DADRun(run.rt, run.wl, run.signal, DADMeta(
+    bare = DADRun(run.time, run.wl, run.intensity, DADMeta(
         sample_name="X", sequence="S", injection_datetime=datetime(2026, 1, 2, 3, 4, 5)))
     back = DADRun.from_chromeleon(bare.to_chromeleon(tmp_path / "bare.txt"))
     assert back.meta.injection_number is None
@@ -95,7 +95,8 @@ def test_sequence_names_repeated_samples(tmp_path):
 )
 def test_inject_time_has_utc_offset(tmp_path, when, timezone, expected):
     path = make_run(when=when).to_chromeleon(tmp_path / "run.txt", timezone=timezone)
-    assert f"Inject Time\t{expected}\r\n" in path.read_text(encoding="utf-8-sig")
+    # read_bytes, not read_text: read_text would turn the file's \r\n into \n
+    assert f"Inject Time\t{expected}\r\n" in path.read_bytes().decode("utf-8-sig")
 
 
 def test_unknown_timezone(tmp_path):

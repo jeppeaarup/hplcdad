@@ -126,22 +126,22 @@ def _parse_data_block(file, n_wavelengths, decimal_comma=True):
 
     # Column 1 (integration time) is never used, so it may be empty or 'n.a.'.
     try:
-        retention_time = table.iloc[:, 0].to_numpy(dtype=np.float64)
-        signal = table.iloc[:, 2:].to_numpy(dtype=np.float64)
+        time = table.iloc[:, 0].to_numpy(dtype=np.float64)
+        intensity = table.iloc[:, 2:].to_numpy(dtype=np.float64)
     except (ValueError, TypeError) as e:
         raise ValueError("Raw data block contains non-numeric fields.") from e
 
-    if np.isnan(retention_time).any() or np.isnan(signal).any():
+    if np.isnan(time).any() or np.isnan(intensity).any():
         raise ValueError("Raw data block contains empty or non-numeric fields.")
 
-    return retention_time, signal
+    return time, intensity
 
 
-def read_chromeleon(path, *, time_unit="min", signal_unit="mAU", max_metadata_lines=100):
+def read_chromeleon(path, *, time_unit="min", intensity_unit="mAU", max_metadata_lines=100):
     """Parse a Chromeleon 3D field export into a RawRun, with no cleanup.
 
     Internal reader; users call DADRun.from_chromeleon, which documents the
-    options. time_unit and signal_unit label the units used in the file.
+    options. time_unit and intensity_unit label the units used in the file.
 
     Both the older export layout (comma decimals, 'Injection ...' metadata
     fields) and the newer one (point decimals, 'Name' / 'Inject Time' fields,
@@ -149,7 +149,7 @@ def read_chromeleon(path, *, time_unit="min", signal_unit="mAU", max_metadata_li
     """
     metadata = {}
     marker_found = False
-    retention_time, signal_rows = [], []
+    time, intensity_rows = [], []
     wavelength = []
     decimal_comma = True
 
@@ -163,7 +163,7 @@ def read_chromeleon(path, *, time_unit="min", signal_unit="mAU", max_metadata_li
                 header_cells = header_line.strip().split("\t")[2:]
                 decimal_comma = _uses_decimal_comma(header_cells)
                 wavelength = [_to_float(h, decimal_comma) for h in header_cells]
-                retention_time, signal_rows = _parse_data_block(
+                time, intensity_rows = _parse_data_block(
                     file, len(wavelength), decimal_comma
                 )
                 break
@@ -182,7 +182,7 @@ def read_chromeleon(path, *, time_unit="min", signal_unit="mAU", max_metadata_li
             f"{RAW_DATA_MARKER!r} marker not found in {path!r} "
             f"(file ended before it appeared)."
         )
-    if len(retention_time) == 0:
+    if len(time) == 0:
         raise ValueError(f"No data rows found after {RAW_DATA_MARKER!r} in {path!r}.")
 
     injection_number = _lookup(metadata, NUMBER_KEYS)
@@ -204,13 +204,13 @@ def read_chromeleon(path, *, time_unit="min", signal_unit="mAU", max_metadata_li
     )
 
     return RawRun(
-        rt=np.array(retention_time),
+        time=np.array(time),
         wl=np.array(wavelength),
-        signal=np.array(signal_rows),
+        intensity=np.array(intensity_rows),
         meta=meta,
         time_unit=time_unit,
-        signal_unit=signal_unit,
-        rt_as_rows=True,
+        intensity_unit=intensity_unit,
+        time_as_rows=True,
     )
 
 

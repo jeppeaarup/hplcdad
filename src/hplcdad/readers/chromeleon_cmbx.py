@@ -15,14 +15,14 @@ from .chromeleon_txt import _injection_id_from_url
 # Chromeleon backup archives (.cmbx)
 #
 # A .cmbx file is a ZIP archive. header.xml lists every injection and the
-# file holding each of its signals; the 3D DAD field is a ".sfd" file.
+# file holding each of its intensities; the 3D DAD field is a ".sfd" file.
 #
 # An .sfd file holds one block per spectrum:
 #   "RawSpHdr" | 8-byte length (38) | 38-byte header | float64 start wavelength | data
 # The 38-byte header has the retention time (float64, min) at byte 3.
 # The data are unsigned LEB128 varints. Each value has its sign in bit 6 and
 # its magnitude in the other bits (see _sfd_signed). The first four values are
-# settings: wavelength step x 10, an unknown value (10), and the signal scale
+# settings: wavelength step x 10, an unknown value (10), and the intensity scale
 # as a fraction (1000 mAU / 16777215 counts). Then follows one value per
 # wavelength: the first is the count at the start wavelength, the rest are
 # differences from the previous wavelength. A "-0" (64) ends the spectrum;
@@ -57,7 +57,7 @@ def _sfd_signed(value):
 
 
 def _read_sfd(data, name):
-    """Decode an .sfd 3D field into (retention time, wavelength, signal in mAU)."""
+    """Decode an .sfd 3D field into (retention time, wavelength, intensity in mAU)."""
     starts = []
     position = data.find(SFD_BLOCK_MARKER)
     while position >= 0:
@@ -67,9 +67,9 @@ def _read_sfd(data, name):
         raise ValueError(f"{name!r} contains no spectra (no {SFD_BLOCK_MARKER!r} blocks).")
     starts.append(len(data))
 
-    retention_time, spectra, wavelength = [], [], None
+    time, spectra, wavelength = [], [], None
     for index, (start, stop) in enumerate(zip(starts, starts[1:])):
-        retention_time.append(struct.unpack("<d", data[start + 19:start + 27])[0])
+        time.append(struct.unpack("<d", data[start + 19:start + 27])[0])
         start_wavelength = struct.unpack("<d", data[start + 54:start + 62])[0]
         values = _sfd_varints(data[start + SFD_HEADER_SIZE:stop])
         try:
@@ -93,7 +93,7 @@ def _read_sfd(data, name):
             )
         spectra.append(counts * scale)
 
-    return np.array(retention_time), wavelength, np.array(spectra)
+    return np.array(time), wavelength, np.array(spectra)
 
 
 def _datetime_from_raw_data_id(raw_data_id):
@@ -109,36 +109,57 @@ def _datetime_from_raw_data_id(raw_data_id):
     return datetime(*(int(part) for part in match.groups()))
 
 
-def read_cmbx(path):
-    """Read every injection with a 3D field from a .cmbx archive into RawRuns.
-
-    Internal reader; users call DADSequence.from_cmbx, which documents it.
-    Injections without a 3D field (e.g. a wash) are skipped.
-    """
+def _open_cmbx(path):
+    """Open a .cmbx archive and parse its header.xml; return (archive, root)."""
     try:
         archive = zipfile.ZipFile(path)
     except zipfile.BadZipFile:
         raise ValueError(f"{str(path)!r} is not a Chromeleon .cmbx archive (not a ZIP file).") from None
+    try:
+        root = ET.fromstring(archive.read("header.xml"))
+    except KeyError:
+        archive.close()
+        raise ValueError(f"No header.xml in {str(path)!r}; is it a Chromeleon .cmbx archive?") from None
+    return archive, root
+
+
+def _injections_with_3d_field(root):
+    """(injection number, injection element, 3D field element) for each 3D field."""
+    injections = [el for el in root.iter("ChromeleonElement") if el.get("ItemType") == CMBX_INJECTION_TYPE]
+    found = []
+    for number, injection in enumerate(injections, start=1):
+        fields_3d = [s for s in injection if s.get("RawDataFilename", "").endswith(".sfd")]
+        if fields_3d:
+            found.append((number, injection, fields_3d[0]))
+    return found
+
+
+def count_cmbx_fields(path):
+    """Number of injections with a 3D field in a .cmbx archive (reads only the header)."""
+    archive, root = _open_cmbx(path)
+    with archive:
+        return len(_injections_with_3d_field(root))
+
+
+def read_cmbx(path, progress=None):
+    """Read every injection with a 3D field from a .cmbx archive into RawRuns.
+
+    Internal reader; users call DADSequence.from_cmbx, which documents it.
+    Injections without a 3D field (e.g. a wash) are skipped. ``progress``, if
+    given, is called as ``progress(done, total)`` after each 3D field is read.
+    """
+    archive, root = _open_cmbx(path)
 
     runs = []
     with archive:
-        try:
-            root = ET.fromstring(archive.read("header.xml"))
-        except KeyError:
-            raise ValueError(f"No header.xml in {str(path)!r}; is it a Chromeleon .cmbx archive?") from None
-
         sequence = next(
             (el.get("Name") for el in root.iter("ChromeleonElement")
              if el.get("ItemType") == "Dionex.Chromeleon.Data.Sequence"),
             None,
         )
-        injections = [el for el in root.iter("ChromeleonElement") if el.get("ItemType") == CMBX_INJECTION_TYPE]
+        found = _injections_with_3d_field(root)
 
-        for number, injection in enumerate(injections, start=1):
-            fields_3d = [s for s in injection if s.get("RawDataFilename", "").endswith(".sfd")]
-            if not fields_3d:
-                continue
-            field = fields_3d[0]
+        for number, injection, field in found:
             name = injection.get("Name")
             file_name = field.get("RawDataFilename")
 
@@ -148,7 +169,7 @@ def read_cmbx(path):
                     f"Could not read the injection time of {name!r} from "
                     f"{field.get('RawDataFileId')!r} in {str(path)!r}."
                 )
-            retention_time, wavelength, signal = _read_sfd(archive.read(file_name), file_name)
+            time, wavelength, intensity = _read_sfd(archive.read(file_name), file_name)
 
             meta = DADMeta(
                 sample_name=name,
@@ -161,15 +182,17 @@ def read_cmbx(path):
             )
             runs.append(
                 RawRun(
-                    rt=retention_time,
+                    time=time,
                     wl=wavelength,
-                    signal=signal,
+                    intensity=intensity,
                     meta=meta,
                     time_unit="min",
-                    signal_unit="mAU",
-                    rt_as_rows=True,
+                    intensity_unit="mAU",
+                    time_as_rows=True,
                 )
             )
+            if progress is not None:
+                progress(len(runs), len(found))
 
     if not runs:
         raise ValueError(f"No injection with a 3D field found in {str(path)!r}.")
